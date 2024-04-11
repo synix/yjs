@@ -37,6 +37,7 @@ export class ArraySearchMarker {
   constructor (p, index) {
     p.marker = true
     this.p = p
+    // index是用来做什么的?
     this.index = index
     this.timestamp = globalSearchMarkerTimestamp++
   }
@@ -55,6 +56,7 @@ const refreshMarkerTimestamp = marker => { marker.timestamp = globalSearchMarker
  * @param {number} index
  */
 const overwriteMarker = (marker, p, index) => {
+  // 原来marker里Item不再被marker了
   marker.p.marker = false
   marker.p = p
   p.marker = true
@@ -70,6 +72,7 @@ const overwriteMarker = (marker, p, index) => {
 const markPosition = (searchMarker, p, index) => {
   if (searchMarker.length >= maxSearchMarker) {
     // override oldest marker (we don't want to create more objects)
+    // 返回timestamp值最小的marker
     const marker = searchMarker.reduce((a, b) => a.timestamp < b.timestamp ? a : b)
     overwriteMarker(marker, p, index)
     return marker
@@ -80,6 +83,8 @@ const markPosition = (searchMarker, p, index) => {
     return pm
   }
 }
+
+// 所以, 下面这行说明了marker到底是做什么用的吧
 
 /**
  * Search marker help us to find positions in the associative array faster.
@@ -97,14 +102,26 @@ export const findMarker = (yarray, index) => {
   if (yarray._start === null || index === 0 || yarray._searchMarker === null) {
     return null
   }
+
+  // 找到一个和传入的index值最接近的marker
   const marker = yarray._searchMarker.length === 0 ? null : yarray._searchMarker.reduce((a, b) => math.abs(index - a.index) < math.abs(index - b.index) ? a : b)
+
+  // 缺省情况下, 从链表头_start开始遍历
   let p = yarray._start
+  // 缺省情况下，从链表头开始，也就是从数组的index 0开始
   let pindex = 0
+
+  // 缺省情况下, 从链表头_start开始遍历，如果找到一个marker，就从这个marker开始遍历
   if (marker !== null) {
+    // 改为从marker指向的item的遍历
     p = marker.p
+    // 改为从marker指向的item的index开始
     pindex = marker.index
+    // 刷新这个marker的timestamp
     refreshMarkerTimestamp(marker) // we used it, we might need to use it again
   }
+
+  // 先从左向右遍历，尝试去找index对应的item
   // iterate to right if possible
   while (p.right !== null && pindex < index) {
     if (!p.deleted && p.countable) {
@@ -115,16 +132,23 @@ export const findMarker = (yarray, index) => {
     }
     p = p.right
   }
+
   // iterate to left if necessary (might be that pindex > index)
+  // 再从右向左遍历，尝试去找index对应的item
   while (p.left !== null && pindex > index) {
     p = p.left
     if (!p.deleted && p.countable) {
       pindex -= p.length
     }
   }
+
+  // 经过上述两个white循环，index就位于p指向的item中, pindex是这个item的起始index
+
   // we want to make sure that p can't be merged with left, because that would screw up everything
-  // in that cas just return what we have (it is most likely the best marker anyway)
+  // in that case just return what we have (it is most likely the best marker anyway)
   // iterate to left until p can't be merged with left
+
+  // while循环里的条件为真，就表示p这个item能和它左边的item合并
   while (p.left !== null && p.left.id.client === p.id.client && p.left.id.clock + p.left.length === p.id.clock) {
     p = p.left
     if (!p.deleted && p.countable) {
@@ -156,6 +180,8 @@ export const findMarker = (yarray, index) => {
   //   window.lengthes.push(marker.index - pindex)
   //   console.log('distance', marker.index - pindex, 'len', p && p.parent.length)
   // }
+
+  // 如果最终找到的精确的index和已存在的最近的marker相差甚微，就复用这个marker，否则就创建一个新的marker
   if (marker !== null && math.abs(marker.index - pindex) < /** @type {YText|YArray<any>} */ (p.parent).length / maxSearchMarker) {
     // adjust existing marker
     overwriteMarker(marker, p, pindex)
@@ -176,8 +202,10 @@ export const findMarker = (yarray, index) => {
  * @param {number} len If insertion, len is positive. If deletion, len is negative.
  */
 export const updateMarkerChanges = (searchMarker, index, len) => {
+  // 从后往前遍历searchMarker数组
   for (let i = searchMarker.length - 1; i >= 0; i--) {
     const m = searchMarker[i]
+
     if (len > 0) {
       /**
        * @type {Item|null}
@@ -194,6 +222,7 @@ export const updateMarkerChanges = (searchMarker, index, len) => {
           m.index -= p.length
         }
       }
+
       if (p === null || p.marker === true) {
         // remove search marker if updated position is null or if position is already marked
         searchMarker.splice(i, 1)
@@ -202,6 +231,7 @@ export const updateMarkerChanges = (searchMarker, index, len) => {
       m.p = p
       p.marker = true
     }
+
     if (index < m.index || (len > 0 && index === m.index)) { // a simple index <= m.index check would actually suffice
       m.index = math.max(index, m.index + len)
     }
@@ -250,6 +280,7 @@ export const callTypeObservers = (type, transaction, event) => {
 /**
  * @template EventType
  * Abstract Yjs Type class
+ * YText/YArray/YMap/YXmlFragment的父类
  */
 export class AbstractType {
   constructor () {
@@ -259,16 +290,20 @@ export class AbstractType {
     this._item = null
     /**
      * @type {Map<string,Item>}
+     * 这个_map是专供YMap使用的吗?
      */
     this._map = new Map()
     /**
      * @type {Item|null}
+     * 说明每个YType内部都有一个Item双向链表，_start是这个链表的头指针
+     * 链表的每个元素都是一个Item对象，Item对象包含了当前Item的内容(内容的类型为AbstractContent)，以及指向前一个Item的left指针，指向后一个Item的right指针
      */
     this._start = null
     /**
      * @type {Doc|null}
      */
     this.doc = null
+    // 这个_length代表的并不是链表的元素个数，而是深入一层到Item的content里，然后把所有链表元素的content的length相加
     this._length = 0
     /**
      * Event handlers
@@ -282,6 +317,8 @@ export class AbstractType {
     this._dEH = createEventHandler()
     /**
      * @type {null | Array<ArraySearchMarker>}
+     * 因为YType内部是一个双向链表(_start代表头指针)，那么链表的按index查找元素的性能是比较慢的
+     * 所以这里将查找结果缓存起来，也就是把index和Item的映射关系存储在_searchMarker数组里
      */
     this._searchMarker = null
   }
@@ -443,6 +480,8 @@ export const typeListSlice = (type, start, end) => {
  * @function
  */
 export const typeListToArray = type => {
+  // 返回的cs数组并不是YType里Item链表直接转换出来的，而是会深入一层对每个Item的content进行拆解，然后放到cs数组里
+  // cs == content set??
   const cs = []
   let n = type._start
   while (n !== null) {
@@ -632,22 +671,39 @@ export const typeListGet = (type, index) => {
  * @function
  */
 export const typeListInsertGenericsAfter = (transaction, parent, referenceItem, content) => {
+  // 注意: 
+  // 第3个参数referenceItem是一个Item对象，它是插入位置的前一个Item，如果referenceItem为null，就表示插入到parent容器的头部
+  // 第4个参数content是一个数组，包含待插入的所有数据
+
+  // left在这个函数里要经过多次赋值，因为content是一个数组，left代表待插入元素的left指针
+  // 随着content数组元素不断插入，left指针会不断向右移动，所以会有多次赋值
   let left = referenceItem
   const doc = transaction.doc
   const ownClientId = doc.clientID
   const store = doc.store
+  // 如果referenceItem为null，表示插入到为parent容器的头部，即right将为parent容器现在的链表头
+  // 否则，插入为referenceItem的下一个元素(referenceItem的right指针指向的) ，即right将为referenceItem的right
+
+  // right在这个函数里只经过这一次赋值, 所以待插入的元素永远在referenceItem之前
   const right = referenceItem === null ? parent._start : referenceItem.right
+
   /**
    * @type {Array<Object|Array<any>|number|null>}
    */
   let jsonContent = []
+
   const packJsonContent = () => {
+    // 把jsonContent数组里已经收集到的JavaScript基本数据类型的值，打包成一个ContentAny对象
     if (jsonContent.length > 0) {
+      // JavaScript基本数据类型对应ContentAny
       left = new Item(createID(ownClientId, getState(store, ownClientId)), left, left && left.lastId, right, right && right.id, parent, null, new ContentAny(jsonContent))
       left.integrate(transaction, 0)
       jsonContent = []
     }
   }
+
+  // 从这个forEach遍历可以看出, content数组里除了连续的JavaScript基本数据类型的值，其他类型的值都会一一对应一个Item实例
+  // 而content数组里的JavaScript基本数据类型的值，如果是连续的，会被收集到jsonContent数组里，然后打包成一个Item(见上述packJsonContent()函数)
   content.forEach(c => {
     if (c === null) {
       jsonContent.push(c)
@@ -658,22 +714,27 @@ export const typeListInsertGenericsAfter = (transaction, parent, referenceItem, 
         case Boolean:
         case Array:
         case String:
+          // 如果是JavaScript里的基本数据类型，就直接push到jsonContent数组里
           jsonContent.push(c)
           break
         default:
           packJsonContent()
+
           switch (c.constructor) {
             case Uint8Array:
             case ArrayBuffer:
+              // Uint8Array/ArrayBuffer对应ContentBinary
               left = new Item(createID(ownClientId, getState(store, ownClientId)), left, left && left.lastId, right, right && right.id, parent, null, new ContentBinary(new Uint8Array(/** @type {Uint8Array} */ (c))))
               left.integrate(transaction, 0)
               break
             case Doc:
+              // Y.Doc对应ContentDoc
               left = new Item(createID(ownClientId, getState(store, ownClientId)), left, left && left.lastId, right, right && right.id, parent, null, new ContentDoc(/** @type {Doc} */ (c)))
               left.integrate(transaction, 0)
               break
             default:
               if (c instanceof AbstractType) {
+                // 说明c是一个YText/YArray/YMap/YXmlFragment实例，这些类型对应ContentType
                 left = new Item(createID(ownClientId, getState(store, ownClientId)), left, left && left.lastId, right, right && right.id, parent, null, new ContentType(c))
                 left.integrate(transaction, 0)
               } else {
@@ -683,6 +744,7 @@ export const typeListInsertGenericsAfter = (transaction, parent, referenceItem, 
       }
     }
   })
+
   packJsonContent()
 }
 
@@ -698,15 +760,20 @@ const lengthExceeded = () => error.create('Length exceeded!')
  * @function
  */
 export const typeListInsertGenerics = (transaction, parent, index, content) => {
+  // 如果插入位置超过了超过了parent容器的_length，就抛出异常
   if (index > parent._length) {
     throw lengthExceeded()
   }
+
+  // 如果插入位置是0，就直接插入到parent容器的头部
   if (index === 0) {
     if (parent._searchMarker) {
       updateMarkerChanges(parent._searchMarker, index, content.length)
     }
+    // 第3个referenceItem参数为null，代表插入到parent容器头部
     return typeListInsertGenericsAfter(transaction, parent, null, content)
   }
+
   const startIndex = index
   const marker = findMarker(parent, index)
   let n = parent._start
@@ -751,13 +818,17 @@ export const typeListInsertGenerics = (transaction, parent, index, content) => {
  */
 export const typeListPushGenerics = (transaction, parent, content) => {
   // Use the marker with the highest index and iterate to the right.
+  // 找出index值最大的marker
   const marker = (parent._searchMarker || []).reduce((maxMarker, currMarker) => currMarker.index > maxMarker.index ? currMarker : maxMarker, { index: 0, p: parent._start })
+  // 要么从链表头开始，要么从marker指向的item开始，找到链表尾
   let n = marker.p
   if (n) {
     while (n.right) {
       n = n.right
     }
   }
+
+  // 第3个参数传入的是null，表示插入到链表尾
   return typeListInsertGenericsAfter(transaction, parent, n, content)
 }
 
@@ -789,6 +860,9 @@ export const typeListDelete = (transaction, parent, index, length) => {
       index -= n.length
     }
   }
+
+  // 上个循环结束后，n指向的是第一个要删除的item
+
   // delete all items until done
   while (length > 0 && n !== null) {
     if (!n.deleted) {
@@ -804,6 +878,7 @@ export const typeListDelete = (transaction, parent, index, length) => {
     throw lengthExceeded()
   }
   if (parent._searchMarker) {
+    // 为什么第3个参数len传入的是-startLength + length?
     updateMarkerChanges(parent._searchMarker, startIndex, -startLength + length /* in case we remove the above exception */)
   }
 }

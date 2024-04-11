@@ -48,6 +48,7 @@ export class YArray extends AbstractType {
     /**
      * @type {Array<any>?}
      * @private
+     * prelim是预赛的意思，这里的_prelimContent是指在this.doc为null(未执行过_integrate()方法)的情况下，对YArray进行操作的时候，将操作的内容先缓存在_prelimContent中
      */
     this._prelimContent = []
     /**
@@ -107,12 +108,15 @@ export class YArray extends AbstractType {
      */
     const arr = new YArray()
     arr.insert(0, this.toArray().map(el =>
+      // YType是要调用clone()方法进行深度拷贝的
       el instanceof AbstractType ? /** @type {typeof el} */ (el.clone()) : el
     ))
     return arr
   }
 
   get length () {
+    // 如果_prelimContent为null，说明已经执行过_integrate()方法，直接返回this._length
+    // 否则返回_prelimContent数组的长度
     return this._prelimContent === null ? this._length : this._prelimContent.length
   }
 
@@ -144,11 +148,14 @@ export class YArray extends AbstractType {
    * @param {Array<T>} content The array of content
    */
   insert (index, content) {
+    // 注意: 这里content是数组，待插入到index索引处
+    // 如果this.doc不为null，说明已经执行过_integrate()方法，直接调用typeListInsertGenerics()方法
     if (this.doc !== null) {
       transact(this.doc, transaction => {
         typeListInsertGenerics(transaction, this, index, /** @type {any} */ (content))
       })
     } else {
+      // 如果this.doc为null，说明还未执行过_integrate()方法，将content暂存到_prelimContent中
       /** @type {Array<any>} */ (this._prelimContent).splice(index, 0, ...content)
     }
   }
@@ -191,6 +198,7 @@ export class YArray extends AbstractType {
         typeListDelete(transaction, this, index, length)
       })
     } else {
+      // 这里index在_prelimContent和在链表中的语义是有区别的，因为链表中的index是要对Item深入一层在content层面进行操作的
       /** @type {Array<any>} */ (this._prelimContent).splice(index, length)
     }
   }

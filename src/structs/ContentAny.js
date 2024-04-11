@@ -9,6 +9,7 @@ export class ContentAny {
   constructor (arr) {
     /**
      * @type {Array<any>}
+     * 存储JavaScript基本数据类型的值的数组
      */
     this.arr = arr
   }
@@ -46,6 +47,7 @@ export class ContentAny {
    * @return {ContentAny}
    */
   splice (offset) {
+    // 把当前ContentAny从offset处分拆成两个ContentAny
     const right = new ContentAny(this.arr.slice(offset))
     this.arr = this.arr.slice(0, offset)
     return right
@@ -56,6 +58,7 @@ export class ContentAny {
    * @return {boolean}
    */
   mergeWith (right) {
+    // 拼接两个ContentAny为一个ContentAny
     this.arr = this.arr.concat(right.arr)
     return true
   }
@@ -78,6 +81,7 @@ export class ContentAny {
    * @param {number} offset
    */
   write (encoder, offset) {
+    // 这个write()方法和下面的readContentAny()函数是对应的，对应ContentAny的序列化和反序列化
     const len = this.arr.length
     encoder.writeLen(len - offset)
     for (let i = offset; i < len; i++) {
@@ -90,6 +94,7 @@ export class ContentAny {
    * @return {number}
    */
   getRef () {
+    // 为什么是8？这是在哪里定义的?
     return 8
   }
 }

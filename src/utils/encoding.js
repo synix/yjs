@@ -113,6 +113,8 @@ export const readClientsStructRefs = (decoder, doc) => {
   /**
    * @type {Map<number, { i: number, refs: Array<Item | GC> }>}
    */
+
+  // 创建一个Map，key为clientId
   const clientRefs = map.create()
   const numOfStateUpdates = decoding.readVarUint(decoder.restDecoder)
   for (let i = 0; i < numOfStateUpdates; i++) {

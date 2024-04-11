@@ -44,6 +44,7 @@ export class ContentType {
     /**
      * @type {AbstractType<any>}
      */
+    // 具体存的YType实例
     this.type = type
   }
 
@@ -51,6 +52,7 @@ export class ContentType {
    * @return {number}
    */
   getLength () {
+    // ContentType存放的是一个YType实例，所以length为1
     return 1
   }
 
@@ -58,6 +60,7 @@ export class ContentType {
    * @return {Array<any>}
    */
   getContent () {
+    // 即使只有1个实例，也要以数组返回，是为了getContent()这个方法的统一性
     return [this.type]
   }
 
@@ -137,6 +140,7 @@ export class ContentType {
       item = item.right
     }
     this.type._start = null
+
     this.type._map.forEach(/** @param {Item | null} item */ (item) => {
       while (item !== null) {
         item.gc(store, true)
@@ -168,4 +172,9 @@ export class ContentType {
  * @param {UpdateDecoderV1 | UpdateDecoderV2} decoder
  * @return {ContentType}
  */
+
+// decoder.readTypeRef()读出具体YType的类型标识，比如YArrayRefID
+// typeRefs[decoder.readTypeRef()]查找到具体的readYType()函数，比如readYArray()
+// 传入decoder，给readYType()函数，返回一个新建的YType实例
+// 通过ContentType构造一个ContentType实例，存放这个新建的YType实例
 export const readContentType = decoder => new ContentType(typeRefs[decoder.readTypeRef()](decoder))

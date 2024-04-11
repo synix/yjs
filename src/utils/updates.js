@@ -41,19 +41,28 @@ import {
  * @param {UpdateDecoderV1 | UpdateDecoderV2} decoder
  */
 function * lazyStructReaderGenerator (decoder) {
+  // 从UpdateDecoder里decode出来一个个AbstractStruct类(子类包括Item/Skip/GC)的实例
+
+  // 有多少个state update?
   const numOfStateUpdates = decoding.readVarUint(decoder.restDecoder)
   for (let i = 0; i < numOfStateUpdates; i++) {
+    // 这个state update里有多少个struct?
     const numberOfStructs = decoding.readVarUint(decoder.restDecoder)
+    // 这个state update来自哪个client?
     const client = decoder.readClient()
+    // state update的clock值
     let clock = decoding.readVarUint(decoder.restDecoder)
     for (let i = 0; i < numberOfStructs; i++) {
       const info = decoder.readInfo()
       // @todo use switch instead of ifs
       if (info === 10) {
+        // info为10时，表示这个struct是一个Skip
         const len = decoding.readVarUint(decoder.restDecoder)
         yield new Skip(createID(client, clock), len)
+        // 每读取一个Skip，clock值加上Skip的长度
         clock += len
       } else if ((binary.BITS5 & info) !== 0) {
+        // 否则，info第5位为1时，表示这个struct是一个GC，不为1时，表示这个struct是一个Item
         const cantCopyParentInfo = (info & (binary.BIT7 | binary.BIT8)) === 0
         // If parent = null and neither left nor right are defined, then we know that `parent` is child of `y`
         // and we read the next string as parentYKey.
@@ -71,10 +80,12 @@ function * lazyStructReaderGenerator (decoder) {
           readItemContent(decoder, info) // item content
         )
         yield struct
+        // 每读取一个Item，clock值加上Item的长度
         clock += struct.length
       } else {
         const len = decoder.readLen()
         yield new GC(createID(client, clock), len)
+        // 每读取一个GC，clock值加上GC的长度
         clock += len
       }
     }
@@ -102,6 +113,7 @@ export class LazyStructReader {
    */
   next () {
     // ignore "Skip" structs
+    // 返回decode出来的下一个struct，如果this.filterSkips传入true，则会忽略Skip struct
     do {
       this.curr = this.gen.next().value || null
     } while (this.filterSkips && this.curr !== null && this.curr.constructor === Skip)
@@ -121,6 +133,7 @@ export const logUpdate = update => logUpdateV2(update, UpdateDecoderV1)
  *
  */
 export const logUpdateV2 = (update, YDecoder = UpdateDecoderV2) => {
+  // 这个函数和decodeUpdateV2()的逻辑是一样的，区别在于，这个函数只是打印decode出来的structs数组和ds数组，而decodeUpdateV2()是返回这两个数组
   const structs = []
   const updateDecoder = new YDecoder(decoding.createDecoder(update))
   const lazyDecoder = new LazyStructReader(updateDecoder, false)
@@ -331,9 +344,12 @@ const sliceStruct = (left, diff) => {
  * @return {Uint8Array}
  */
 export const mergeUpdatesV2 = (updates, YDecoder = UpdateDecoderV2, YEncoder = UpdateEncoderV2) => {
+  // updates数组只有一个元素时，直接返回这个元素
   if (updates.length === 1) {
     return updates[0]
   }
+
+  // 对于每个update, 创建一个UpdateDecoderV2实例，进而创建一个LazyStructReader实例
   const updateDecoders = updates.map(update => new YDecoder(decoding.createDecoder(update)))
   let lazyStructDecoders = updateDecoders.map(decoder => new LazyStructReader(decoder, true))
 
@@ -354,6 +370,7 @@ export const mergeUpdatesV2 = (updates, YDecoder = UpdateDecoderV2, YEncoder = U
   while (true) {
     // Write higher clients first ⇒ sort by clientID & clock and remove decoders without content
     lazyStructDecoders = lazyStructDecoders.filter(dec => dec.curr !== null)
+    // 这里是先按照clientID从大到小排序，然后再按照clock从小到大排序，最后再按照struct的类型排序
     lazyStructDecoders.sort(
       /** @type {function(any,any):number} */ (dec1, dec2) => {
         if (dec1.curr.id.client === dec2.curr.id.client) {
@@ -435,8 +452,11 @@ export const mergeUpdatesV2 = (updates, YDecoder = UpdateDecoderV2, YEncoder = U
       }
     } else {
       currWrite = { struct: /** @type {Item | GC} */ (currDecoder.curr), offset: 0 }
+      // 代表已经处理了这个struct，所以需要调用next()来移动当前这个update到下一个struct
       currDecoder.next()
     }
+
+    // 如果当前这个update的下一个struct不是Skip，并且这个struct的clientID和clock值和当前这个update的上一个struct的clientID和clock值相同，则继续处理当前这个update，不需要进入下一趟while循环给updates重排序
     for (
       let next = currDecoder.curr;
       next !== null && next.id.client === firstClient && next.id.clock === currWrite.struct.id.clock + currWrite.struct.length && next.constructor !== Skip;
@@ -445,11 +465,13 @@ export const mergeUpdatesV2 = (updates, YDecoder = UpdateDecoderV2, YEncoder = U
       writeStructToLazyStructWriter(lazyStructEncoder, currWrite.struct, currWrite.offset)
       currWrite = { struct: next, offset: 0 }
     }
-  }
+  } // end while
+
   if (currWrite !== null) {
     writeStructToLazyStructWriter(lazyStructEncoder, currWrite.struct, currWrite.offset)
     currWrite = null
   }
+
   finishLazyStructWriting(lazyStructEncoder)
 
   const dss = updateDecoders.map(decoder => readDeleteSet(decoder))

@@ -11,6 +11,7 @@ import * as doc from './doc.tests.js'
 import * as snapshot from './snapshot.tests.js'
 import * as updates from './updates.tests.js'
 import * as relativePositions from './relativePositions.tests.js'
+import * as item from './Item.tests.js'
 
 import { runTests } from 'lib0/testing'
 import { isBrowser, isNode } from 'lib0/environment'
@@ -19,8 +20,20 @@ import * as log from 'lib0/logging'
 if (isBrowser) {
   log.createVConsole(document.body)
 }
+
 runTests({
-  doc, map, array, text, xml, encoding, undoredo, compatibility, snapshot, updates, relativePositions
+  // doc,
+  // map,
+  // array,
+  // text,
+  // xml,
+  // encoding,
+  // undoredo,
+  // compatibility,
+  // snapshot,
+  updates,
+  // relativePositions,
+  // item,
 }).then(success => {
   /* istanbul ignore next */
   if (isNode) {

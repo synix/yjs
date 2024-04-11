@@ -60,6 +60,8 @@ const useV2Encoding = () => {
   enc = encV1
 }
 
+// TestYInstance是Y.Doc的子类
+// 1个TestYInstance实例代表1个remote client
 export class TestYInstance extends Y.Doc {
   /**
    * @param {TestConnector} testConnector
@@ -67,6 +69,8 @@ export class TestYInstance extends Y.Doc {
    */
   constructor (testConnector, clientID) {
     super()
+
+    // 唯一标识1个remote client
     this.userID = clientID // overwriting clientID
     /**
      * @type {TestConnector}
@@ -74,8 +78,11 @@ export class TestYInstance extends Y.Doc {
     this.tc = testConnector
     /**
      * @type {Map<TestYInstance, Array<Uint8Array>>}
+     * 这里的key代表发送消息的remote client，value数组里的元素代表接收到的消息
      */
     this.receiving = new Map()
+
+    /// 将本remove client记录进allConns数组里
     testConnector.allConns.add(this)
     /**
      * The list of received updates.
@@ -83,7 +90,9 @@ export class TestYInstance extends Y.Doc {
      * @type {Array<Uint8Array>}
      */
     this.updates = []
+
     // set up observe on local model
+    // 当前remote client的doc发生update，广播update消息给其他在线的remote clients，使得
     this.on(enc.updateEventName, /** @param {Uint8Array} update @param {any} origin */ (update, origin) => {
       if (origin !== testConnector) {
         const encoder = encoding.createEncoder()
@@ -92,6 +101,7 @@ export class TestYInstance extends Y.Doc {
       }
       this.updates.push(update)
     })
+
     this.connect()
   }
 
@@ -111,12 +121,17 @@ export class TestYInstance extends Y.Doc {
     if (!this.tc.onlineConns.has(this)) {
       this.tc.onlineConns.add(this)
       const encoder = encoding.createEncoder()
+      // 写入SyncStep1消息
       syncProtocol.writeSyncStep1(encoder, this)
       // publish SyncStep1
+      // 把SyncStep1消息广播给所有其他remote clients，说白了就是调用onlineConns数组里其他TestYInstance的_receive()方法
+      // SyncStep1消息是什么? https://github.com/yjs/y-protocols/blob/master/sync.js
       broadcastMessage(this, encoding.toUint8Array(encoder))
+
       this.tc.onlineConns.forEach(remoteYInstance => {
         if (remoteYInstance !== this) {
           // remote instance sends instance to this instance
+          // 所有其他remote clients发送SyncStep1消息给当前remote client
           const encoder = encoding.createEncoder()
           syncProtocol.writeSyncStep1(encoder, remoteYInstance)
           this._receive(encoding.toUint8Array(encoder), remoteYInstance)
@@ -133,6 +148,7 @@ export class TestYInstance extends Y.Doc {
    * @param {TestYInstance} remoteClient
    */
   _receive (message, remoteClient) {
+    // 把接收到的message放在receiving set里
     map.setIfUndefined(this.receiving, remoteClient, () => /** @type {Array<Uint8Array>} */ ([])).push(message)
   }
 }
@@ -177,26 +193,37 @@ export class TestConnector {
    * @return {boolean}
    */
   flushRandomMessage () {
-    const gen = this.prng
+    const gen = this.prng // 伪随机数生成器
+    // 找出所有收到过message的remote clients
     const conns = Array.from(this.onlineConns).filter(conn => conn.receiving.size > 0)
     if (conns.length > 0) {
+      // 从conns数组里随机选择一个remote client
       const receiver = prng.oneOf(gen, conns)
+      // 从remote client所接收到的message中随机选择一个sender(以及该sender发送的所有message)
       const [sender, messages] = prng.oneOf(gen, Array.from(receiver.receiving))
       const m = messages.shift()
       if (messages.length === 0) {
+        // 如果sender发送的所有message都已经被处理完了，就从receiver的receiving set里删除这个sender
         receiver.receiving.delete(sender)
       }
       if (m === undefined) {
+        // 随机选择的sender没有发送过message，就递归调用flushRandomMessage()，直到找到一个sender发送过message
         return this.flushRandomMessage()
       }
+
       const encoder = encoding.createEncoder()
-      // console.log('receive (' + sender.userID + '->' + receiver.userID + '):\n', syncProtocol.stringifySyncMessage(decoding.createDecoder(m), receiver))
+      // console.log('receive (' + sender.userID + '->' + receiver.userID + '):\n', syncProtocol(decoding.createDecoder(m), receiver))
       // do not publish data created when this function is executed (could be ss2 or update message)
+
+      // origin设置为receiver.tc是为了避免在TestYInstance的构造方法里监听并收到update消息时再次广播update消息?
       syncProtocol.readSyncMessage(decoding.createDecoder(m), encoder, receiver, receiver.tc)
+
       if (encoding.length(encoder) > 0) {
         // send reply message
+        // 把从sender那里接收到的message原样发送回去? 作为reply?
         sender._receive(encoding.toUint8Array(encoder), receiver)
       }
+
       return true
     }
     return false
@@ -302,25 +329,33 @@ export const init = (tc, { users = 5 } = {}, initTestObject) => {
  * 2. user 0 gc
  * 3. get type content
  * 4. disconnect & reconnect all (so gc is propagated)
- * 5. compare os, ds, ss
+ * 5. compare os, ds, ss  // os = opeation set? (比如insert? 还是说这个注释已经过期了?)  ds = DeleteSet  ss = StructStore 
  *
  * @param {Array<TestYInstance>} users
  */
 export const compare = users => {
+  // 所有online remote clients互相通过SyncStep1消息建立连接
   users.forEach(u => u.connect())
+
   while (users[0].tc.flushAllMessages()) {} // eslint-disable-line
   // For each document, merge all received document updates with Y.mergeUpdates and create a new document which will be added to the list of "users"
   // This ensures that mergeUpdates works correctly
+
+  // 把每个remote client自身对doc的updates，合并起来形成一个新的doc
   const mergedDocs = users.map(user => {
     const ydoc = new Y.Doc()
     enc.applyUpdate(ydoc, enc.mergeUpdates(user.updates))
     return ydoc
   })
+
+  // 这个doc追加到传入的users数组里
   users.push(.../** @type {any} */(mergedDocs))
+
   const userArrayValues = users.map(u => u.getArray('array').toJSON())
   const userMapValues = users.map(u => u.getMap('map').toJSON())
   const userXmlValues = users.map(u => u.get('xml', Y.XmlElement).toString())
   const userTextValues = users.map(u => u.getText('text').toDelta())
+
   for (const u of users) {
     t.assert(u.store.pendingDs === null)
     t.assert(u.store.pendingStructs === null)
@@ -331,6 +366,7 @@ export const compare = users => {
   const ymapkeys = Array.from(users[0].getMap('map').keys())
   t.assert(ymapkeys.length === Object.keys(userMapValues[0]).length)
   ymapkeys.forEach(key => t.assert(object.hasProperty(userMapValues[0], key)))
+
   /**
    * @type {Object<string,any>}
    */
@@ -339,7 +375,9 @@ export const compare = users => {
     mapRes[k] = v instanceof Y.AbstractType ? v.toJSON() : v
   }
   t.compare(userMapValues[0], mapRes)
+
   // Compare all users
+  // 这里是 i < users.length - 1 而不是 i < users.length
   for (let i = 0; i < users.length - 1; i++) {
     t.compare(userArrayValues[i].length, users[i].getArray('array').length)
     t.compare(userArrayValues[i], userArrayValues[i + 1])
@@ -354,6 +392,7 @@ export const compare = users => {
       }
       return true
     })
+
     t.compare(Y.encodeStateVector(users[i]), Y.encodeStateVector(users[i + 1]))
     Y.equalDeleteSets(Y.createDeleteSetFromStructStore(users[i].store), Y.createDeleteSetFromStructStore(users[i + 1].store))
     compareStructStores(users[i].store, users[i + 1].store)

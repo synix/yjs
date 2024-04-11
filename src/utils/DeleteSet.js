@@ -243,13 +243,16 @@ export const writeDeleteSet = (encoder, ds) => {
  * @function
  */
 export const readDeleteSet = decoder => {
+  // 所以在yjs源码语境下, ds = DeleteSet
   const ds = new DeleteSet()
   const numClients = decoding.readVarUint(decoder.restDecoder)
   for (let i = 0; i < numClients; i++) {
     decoder.resetDsCurVal()
+    // client id
     const client = decoding.readVarUint(decoder.restDecoder)
     const numberOfDeletes = decoding.readVarUint(decoder.restDecoder)
     if (numberOfDeletes > 0) {
+      // clients是一个Map，key是client id，value是一个DeleteItem数组
       const dsField = map.setIfUndefined(ds.clients, client, () => /** @type {Array<DeleteItem>} */ ([]))
       for (let i = 0; i < numberOfDeletes; i++) {
         dsField.push(new DeleteItem(decoder.readDsClock(), decoder.readDsLen()))

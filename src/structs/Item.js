@@ -310,6 +310,7 @@ export class Item extends AbstractStruct {
 
   /**
    * This is used to mark the item as an indexed fast-search marker
+   * 表示这个item被缓存在YType的serach marker里了😠
    *
    * @type {boolean}
    */
@@ -336,6 +337,7 @@ export class Item extends AbstractStruct {
     }
   }
 
+  // countable是什么意思?
   get countable () {
     return (this.info & binary.BIT2) > 0
   }
@@ -529,6 +531,9 @@ export class Item extends AbstractStruct {
     }
   }
 
+  // next()和prev()方法用于查找下一个和上一个未删除的Item
+  // 也就说明Item是以双向链表连接的
+
   /**
    * Returns the next non-deleted item
    */
@@ -618,6 +623,7 @@ export class Item extends AbstractStruct {
         parent._length -= this.length
       }
       this.markDeleted()
+      // 为什么要在transaction里维护一个deleteSet?
       addToDeleteSet(transaction.deleteSet, this.id.client, this.id.clock, this.length)
       addChangedTypeToTransaction(transaction, parent, this.parentSub)
       this.content.delete(transaction)
@@ -627,6 +633,7 @@ export class Item extends AbstractStruct {
   /**
    * @param {StructStore} store
    * @param {boolean} parentGCd
+   * parentGCd表示是把本Item里的content GC掉(将content置为ContentDeleted实例), 还是把本Item GC掉(将本Item替换为GC实例)
    */
   gc (store, parentGCd) {
     if (!this.deleted) {
@@ -698,6 +705,7 @@ export class Item extends AbstractStruct {
 /**
  * @param {UpdateDecoderV1 | UpdateDecoderV2} decoder
  * @param {number} info
+ * 根据info的低5位，选择对应的contentRefs中的函数来调用
  */
 export const readItemContent = (decoder, info) => contentRefs[info & binary.BITS5](decoder)
 
@@ -745,6 +753,8 @@ export class AbstractContent {
    * * Whether this Item should be addressable via `yarray.get(i)`
    * * Whether this Item should be counted when computing yarray.length
    *
+   * 上面两行解释了isCountable()的语义
+   * 目前AbstractContent的子类里，ContentDeleted和ContentFormat返回false，其他都返回true
    * @return {boolean}
    */
   isCountable () {

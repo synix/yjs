@@ -11,6 +11,7 @@ export class StructStore {
   constructor () {
     /**
      * @type {Map<number,Array<GC|Item>>}
+     * clients是一个Map，key是client id，value是一个数组，数组中存储了该client的所有Item和GC(不包括Skip)
      */
     this.clients = new Map()
     /**
@@ -35,6 +36,7 @@ export class StructStore {
  * @function
  */
 export const getStateVector = store => {
+  // 返回一个Map，key是client id，value是该client期待的下一个clock值
   const sm = new Map()
   store.clients.forEach((structs, client) => {
     const struct = structs[structs.length - 1]
@@ -52,11 +54,15 @@ export const getStateVector = store => {
  * @function
  */
 export const getState = (store, client) => {
+  // 为什么这个函数叫做getStatte()，而不是getClock()？
   const structs = store.clients.get(client)
   if (structs === undefined) {
     return 0
   }
+
+  // 获取该client的最后一个Item或GC
   const lastStruct = structs[structs.length - 1]
+  // 该client最后一个Item或GC的clock + length，作为下一个期待的clock值
   return lastStruct.id.clock + lastStruct.length
 }
 
