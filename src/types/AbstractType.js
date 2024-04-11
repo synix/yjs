@@ -286,6 +286,7 @@ export class AbstractType {
   constructor () {
     /**
      * @type {Item|null}
+     * 维护和Item实例一对一的关系
      */
     this._item = null
     /**

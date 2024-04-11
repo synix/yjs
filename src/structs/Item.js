@@ -296,6 +296,7 @@ export class Item extends AbstractStruct {
     this.redone = null
     /**
      * @type {AbstractContent}
+     * 如果content类型是ContentType，则content负责维护和YType实例一对一的关系
      */
     this.content = content
     /**
@@ -561,6 +562,7 @@ export class Item extends AbstractStruct {
    */
   get lastId () {
     // allocating ids is pretty costly because of the amount of ids created, so we try to reuse whenever possible
+    // 这里之所以要减1，是因为this.id.clock + this.length是下一个Item的clock值
     return this.length === 1 ? this.id : createID(this.id.client, this.id.clock + this.length - 1)
   }
 

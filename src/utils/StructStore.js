@@ -11,6 +11,7 @@ export class StructStore {
   constructor () {
     /**
      * @type {Map<number,Array<GC|Item>>}
+     * 说明StructStore是Item实例的Cache，是Item实例除双向链表之外的另一种存储方式
      * clients是一个Map，key是client id，value是一个数组，数组中存储了该client的所有Item和GC(不包括Skip)
      */
     this.clients = new Map()
