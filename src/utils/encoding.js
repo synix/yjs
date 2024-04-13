@@ -372,7 +372,7 @@ export const writeStructsFromTransaction = (encoder, transaction) => writeClient
 /**
  * Read and apply a document update.
  *
- * This function has the same effect as `applyUpdate` but accepts an decoder.
+ * This function has the same effect as `applyUpdate` but accepts a decoder.
  *
  * @param {decoding.Decoder} decoder
  * @param {Doc} ydoc
@@ -464,6 +464,7 @@ export const readUpdateV2 = (decoder, ydoc, transactionOrigin, structDecoder = n
 export const readUpdate = (decoder, ydoc, transactionOrigin) => readUpdateV2(decoder, ydoc, transactionOrigin, new UpdateDecoderV1(decoder))
 
 /**
+ * 这里倒是揭示了update的两种可能的来源
  * Apply a document update created by, for example, `y.on('update', update => ..)` or `update = encodeStateAsUpdate()`.
  *
  * This function has the same effect as `readUpdate` but accepts an Uint8Array instead of a Decoder.
