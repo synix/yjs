@@ -844,6 +844,9 @@ export class YTextEvent extends YEvent {
  * This type replaces y-richtext as this implementation is able to handle
  * block formats (format information on a paragraph), embeds (complex elements
  * like pictures and videos), and text formats (**bold**, *italic*).
+ * 
+ * ContentEmbed代表音频内容
+ * ContentFormat代表粗体/斜体等文本格式化信息
  *
  * @extends AbstractType<YTextEvent>
  */
@@ -937,6 +940,7 @@ export class YText extends AbstractType {
      */
     let n = this._start
     while (n !== null) {
+      // 只拼接content为ContentString类型的
       if (!n.deleted && n.countable && n.content.constructor === ContentString) {
         str += /** @type {ContentString} */ (n.content).str
       }

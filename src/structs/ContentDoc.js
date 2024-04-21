@@ -12,6 +12,7 @@ const createDocFromOpts = (guid, opts) => new Doc({ guid, ...opts, shouldLoad: o
 
 /**
  * @private
+ * ContentDoc存储YDoc实例
  */
 export class ContentDoc {
   /**

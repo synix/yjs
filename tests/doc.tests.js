@@ -69,7 +69,7 @@ export const testGetTypeEmptyId = _tc => {
   doc1.getText().insert(1, 'i')
   const doc2 = new Y.Doc()
   Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1))
-  t.assert(doc2.getText().toString() === 'hi')
+  t.assert(doc2.getText().toString() === 'hi')  // fsfds
   t.assert(doc2.getText('').toString() === 'hi')
 }
 
@@ -326,4 +326,16 @@ export const testSyncDocsEvent = async _tc => {
   t.assert(ydoc.isLoaded)
   t.assert(!ydoc.isSynced)
   t.assert(ydoc.whenSynced !== oldWhenSynced)
+}
+
+
+/**
+ * @param {t.TestCase} _tc
+ */
+export const testDocGetMethod = async _tc => {
+  const ydoc = new Y.Doc()
+  const ymap = ydoc.get('a', Y.Map)
+  t.assert(ymap instanceof Y.Map)
+  const yarray = ydoc.get('a', Y.AbstractType)
+  t.assert(ymap instanceof Y.Map)
 }

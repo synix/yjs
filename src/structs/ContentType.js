@@ -173,8 +173,8 @@ export class ContentType {
  * @return {ContentType}
  */
 
-// decoder.readTypeRef()读出具体YType的类型标识，比如YArrayRefID
-// typeRefs[decoder.readTypeRef()]查找到具体的readYType()函数，比如readYArray()
+// decoder.readTypeRef() -> 读出具体YType的类型标识，比如YArrayRefID
+// typeRefs[decoder.readTypeRef()] -> 查找到具体的readYType()函数，比如readYArray()
 // 传入decoder，给readYType()函数，返回一个新建的YType实例
-// 通过ContentType构造一个ContentType实例，存放这个新建的YType实例
+// 通过ContentType构造一个ContentType对象，存放这个新建的ytype
 export const readContentType = decoder => new ContentType(typeRefs[decoder.readTypeRef()](decoder))

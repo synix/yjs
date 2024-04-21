@@ -76,6 +76,8 @@ export class Transaction {
      * All types that were directly modified (property added or child
      * inserted/deleted). New types are not included in this Set.
      * Maps from type to parentSubs (`item.parentSub = null` for YArray)
+     * 
+     * 也就是说, parentSub只给YMap设计的, YArray的不涉及的?
      * @type {Map<AbstractType<YEvent<any>>,Set<String|null>>}
      */
     this.changed = new Map()
@@ -406,27 +408,43 @@ const cleanupTransactions = (transactionCleanups, i) => {
  * @function
  */
 export const transact = (doc, f, origin = null, local = true) => {
+  // 注意transact()是一个函数, 而不是Transaction类的方法
   const transactionCleanups = doc._transactionCleanups
+
+  // 表示是否创建了Transaction对象, 并赋值给了doc._transaction
   let initialCall = false
   /**
    * @type {any}
    */
   let result = null
+
+  // 延迟初始化Transaction对象
   if (doc._transaction === null) {
     initialCall = true
     doc._transaction = new Transaction(doc, origin, local)
+
     transactionCleanups.push(doc._transaction)
     if (transactionCleanups.length === 1) {
+      // beforeAllTransactions对应afterAllTransactions事件:
+      // beforeAllTransactions表示transactionCleanups数组长度从0到1
+      // afterAllTransactions表示transactionCleanups数组清空为长度0
       doc.emit('beforeAllTransactions', [doc])
     }
+
+    // beforeTransaction对应afterTransaction事件, aferTransaction事件在cleanupTransactions()函数中触发
     doc.emit('beforeTransaction', [doc._transaction, doc])
   }
+
   try {
     result = f(doc._transaction)
   } finally {
+    // 表示在调用transact()时创建了Transaction对象
     if (initialCall) {
+      // 如果当前Transaction对象是doc._transactionCleanups数组里第一个Transaction对象
       const finishCleanup = doc._transaction === transactionCleanups[0]
       doc._transaction = null
+
+      // 重复一次...如果当前Transaction对象是doc._transactionCleanups数组里第一个Transaction对象
       if (finishCleanup) {
         // The first transaction ended, now process observer calls.
         // Observer call may create new transactions for which we need to call the observers and do cleanup.

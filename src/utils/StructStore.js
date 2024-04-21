@@ -11,12 +11,20 @@ export class StructStore {
   constructor () {
     /**
      * @type {Map<number,Array<GC|Item>>}
-     * 说明StructStore是Item实例的Cache，是Item实例除双向链表之外的另一种存储方式
-     * clients是一个Map，key是client id，value是一个数组，数组中存储了该client的所有Item和GC(不包括Skip)
+     * 说明StructStore是Item除双向链表之外的另一种存储方式
+     * 
+     * 双向链表是依据文档序(即document order)建模的
+     * StrcutStore是依据逻辑时序(即insertion order)建模的
+     * 
+     * clients是一个map, key是client id, value是Item和GC(不包括Skip)实例的数组
+     * 所以clients map是Struct Store数据结构的核心
+     * 
      */
     this.clients = new Map()
     /**
      * @type {null | { missing: Map<number, number>, update: Uint8Array }}
+     * 
+     * pendingStructs和pendingDs在StructStore类里是没有用到的, 在encoding.js里有用到
      */
     this.pendingStructs = null
     /**
@@ -29,7 +37,10 @@ export class StructStore {
 /**
  * Return the states as a Map<client,clock>.
  * Note that clock refers to the next expected clock id.
- *
+ * 
+ * 这个方法阐述了YJS的State Vector到底是什么
+ * 就是client id到其下一个clock值之间的映射关系
+ * 
  * @param {StructStore} store
  * @return {Map<number,number>}
  *
@@ -37,7 +48,7 @@ export class StructStore {
  * @function
  */
 export const getStateVector = store => {
-  // 返回一个Map，key是client id，value是该client期待的下一个clock值
+  // 返回一个Map，key是client id，value是该client的下个clock值
   const sm = new Map()
   store.clients.forEach((structs, client) => {
     const struct = structs[structs.length - 1]
@@ -53,17 +64,15 @@ export const getStateVector = store => {
  *
  * @public
  * @function
- */
+*/
+// 为什么这个函数叫做getState()，而不是getClock()？
 export const getState = (store, client) => {
-  // 为什么这个函数叫做getStatte()，而不是getClock()？
   const structs = store.clients.get(client)
   if (structs === undefined) {
     return 0
   }
 
-  // 获取该client的最后一个Item或GC
   const lastStruct = structs[structs.length - 1]
-  // 该client最后一个Item或GC的clock + length，作为下一个期待的clock值
   return lastStruct.id.clock + lastStruct.length
 }
 
@@ -74,6 +83,7 @@ export const getState = (store, client) => {
  * @function
  */
 export const integretyCheck = store => {
+  // 对StructStore进行完整性检查: 即其内部的所有Item/GC实例的clock值是连续的
   store.clients.forEach(structs => {
     for (let i = 1; i < structs.length; i++) {
       const l = structs[i - 1]
@@ -108,6 +118,8 @@ export const addStruct = (store, struct) => {
 
 /**
  * Perform a binary search on a sorted array
+ * 在structs数组里二分查找clock所命中的Item实例的索引
+ * 
  * @param {Array<Item|GC>} structs
  * @param {number} clock
  * @return {number}
@@ -126,7 +138,10 @@ export const findIndexSS = (structs, clock) => {
   // @todo does it even make sense to pivot the search?
   // If a good split misses, it might actually increase the time to find the correct item.
   // Currently, the only advantage is that search with pivoting might find the item on the first try.
+
+  // 计算传入的clock值占structs数组最大clock值的比例，然后找出同比例下的索引值作为midindex
   let midindex = math.floor((clock / (midclock + mid.length - 1)) * right) // pivoting the search
+
   while (left <= right) {
     mid = structs[midindex]
     midclock = mid.id.clock
@@ -177,6 +192,9 @@ export const getItem = /** @type {function(StructStore,ID):Item} */ (find)
  * @param {number} clock
  */
 export const findIndexCleanStart = (transaction, structs, clock) => {
+  // 这个方法和findIndexSS()的区别在于:
+  // findIndexSS()查找的是clock所命中的Item实例的索引，clock值是落在Item实例的范围内的, 即item.id.clock <= clock < item.id.clock + item.length
+  // findIndexCleanStart()查找的是clock所精确匹配的Item实例的索引，即item.id.clock === clock，会强行通过splitItem()将Item实例拆分成两个Item实例来满足这个条件
   const index = findIndexSS(structs, clock)
   const struct = structs[index]
   if (struct.id.clock < clock && struct instanceof Item) {
@@ -203,6 +221,9 @@ export const getItemCleanStart = (transaction, id) => {
 
 /**
  * Expects that id is actually in store. This function throws or is an infinite loop otherwise.
+ * 
+ * // getItemCleanEnd()和getItemCleanStart()是对应的
+ * // getItemCleanEnd()查找的也是id.clock所精确匹配的Item实例的索引，但满足的条件是id.clock = item.id.clock + item.length - 1
  *
  * @param {Transaction} transaction
  * @param {StructStore} store
@@ -261,6 +282,7 @@ export const iterateStructs = (transaction, structs, clockStart, len, f) => {
   do {
     struct = structs[index++]
     if (clockEnd < struct.id.clock + struct.length) {
+      // 如果clockEnd只是命中了struct，也就是小于struct.id.clock + struct.length，那么就需要将struct拆分成两个struct
       findIndexCleanStart(transaction, structs, clockEnd)
     }
     f(struct)

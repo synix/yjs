@@ -22,7 +22,7 @@ if (isBrowser) {
 }
 
 runTests({
-  // doc,
+  doc,
   // map,
   // array,
   // text,
@@ -31,7 +31,7 @@ runTests({
   // undoredo,
   // compatibility,
   // snapshot,
-  updates,
+  // updates,
   // relativePositions,
   // item,
 }).then(success => {

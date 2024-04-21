@@ -195,6 +195,7 @@ export const createDeleteSetFromStructStore = ss => {
         const clock = struct.id.clock
         let len = struct.length
         if (i + 1 < structs.length) {
+          // 把连续的多个标记为deleted的struct合并为一个DeleteItem
           for (let next = structs[i + 1]; i + 1 < structs.length && next.deleted; next = structs[++i + 1]) {
             len += next.length
           }
@@ -221,6 +222,7 @@ export const writeDeleteSet = (encoder, ds) => {
 
   // Ensure that the delete set is written in a deterministic order
   array.from(ds.clients.entries())
+    // 按照clientId从大到小排序
     .sort((a, b) => b[0] - a[0])
     .forEach(([client, dsitems]) => {
       encoder.resetDsCurVal()

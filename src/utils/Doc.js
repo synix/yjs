@@ -51,6 +51,11 @@ export const generateNewClientId = random.uint32
 
 /**
  * A Yjs instance handles the state of shared data.
+ * 
+ * 继承了ObservableV2，也就具备了on()/off()/once()等事件监听方法，以及emit()发送事件方法
+ * 支持的事件如DocEvents所定义，包括destroy/load/sync/update/updateV2等
+ * 除了load/destroy这两个事件在Doc里触发，其他事件都是在Transaction里触发的
+ * 
  * @extends ObservableV2<DocEvents>
  */
 export class Doc extends ObservableV2 {
@@ -60,17 +65,25 @@ export class Doc extends ObservableV2 {
   constructor ({ guid = random.uuidv4(), collectionid = null, gc = true, gcFilter = () => true, meta = null, autoLoad = false, shouldLoad = true } = {}) {
     super()
     this.gc = gc
+
+    // gc在回收一个Item实例之前会调用gcFilter()，如果返回false则不回收
     this.gcFilter = gcFilter
     this.clientID = generateNewClientId()
     this.guid = guid
     this.collectionid = collectionid
     /**
      * @type {Map<string, AbstractType<YEvent<any>>>}
+     * 这个share是一个Map，key是name，value是AbstractType实例
+     * 也就是说，这个Map存储了所有底层的AbstractType实例
      */
     this.share = new Map()
+
+    /* 依据逻辑时序(即insertion order)对Item实例进行建模 */
     this.store = new StructStore()
     /**
      * @type {Transaction | null}
+     * 
+     * 表示当前正在进行的transaction
      */
     this._transaction = null
     /**
@@ -83,6 +96,8 @@ export class Doc extends ObservableV2 {
     this.subdocs = new Set()
     /**
      * If this document is a subdocument - a document integrated into another document - then _item is defined.
+     * 
+     * 也就是说，如果这个Doc是一个subdoc，那么_item就是这个subdoc在父doc中的Item??
      * @type {Item?}
      */
     this._item = null
@@ -93,6 +108,8 @@ export class Doc extends ObservableV2 {
      * This is set to true when the persistence provider loaded the document from the database or when the `sync` event fires.
      * Note that not all providers implement this feature. Provider authors are encouraged to fire the `load` event when the doc content is loaded from the database.
      *
+     * 与persistence provider有关，当provider从数据库加载文档到内存时，这个值会被设置为true
+     * 
      * @type {boolean}
      */
     this.isLoaded = false
@@ -102,10 +119,14 @@ export class Doc extends ObservableV2 {
      * Also note that not all providers implement this feature. Provider authors are encouraged to fire
      * the `sync` event when the doc has been synced (with `true` as a parameter) or if connection is
      * lost (with false as a parameter).
+     * 
+     * 与connection provider有关，当provider与后端完成同步时，这个值会被设置为true
      */
     this.isSynced = false
     /**
      * Promise that resolves once the document has been loaded from a presistence provider.
+     * 
+     * 也就是说，如果外界发现 this.isLoaded 为false，那就可以 await this.whenLoaded 等待加载完成
      */
     this.whenLoaded = promise.create(resolve => {
       this.on('load', () => {
@@ -113,11 +134,13 @@ export class Doc extends ObservableV2 {
         resolve(this)
       })
     })
+
     const provideSyncedPromise = () => promise.create(resolve => {
       /**
        * @param {boolean} isSynced
        */
       const eventHandler = (isSynced) => {
+        // sync事件触发时，如果isSynced为undefined或者true，那么都认为是同步完成
         if (isSynced === undefined || isSynced === true) {
           this.off('sync', eventHandler)
           resolve()
@@ -125,19 +148,26 @@ export class Doc extends ObservableV2 {
       }
       this.on('sync', eventHandler)
     })
+
     this.on('sync', isSynced => {
+      // 监听sync事件，如果isSynced为false(代表此时连接丢失)，并且this.isSynced为true(代表曾经连接并完成同步过), 那么重新创建一个this.whenSynced
       if (isSynced === false && this.isSynced) {
         this.whenSynced = provideSyncedPromise()
       }
       this.isSynced = isSynced === undefined || isSynced === true
+
+      // 如果isSynced为true，且this.isLoaded为false，那么触发load事件
       if (this.isSynced && !this.isLoaded) {
         this.emit('load', [this])
       }
     })
+
     /**
      * Promise that resolves once the document has been synced with a backend.
      * This promise is recreated when the connection is lost.
      * Note the documentation about the `isSynced` property.
+     * 
+     * 也就是说，如果外界发现 this.isSynced 为false，那就可以 await this.whenSynced 等待连接恢复
      */
     this.whenSynced = provideSyncedPromise()
   }
@@ -212,17 +242,28 @@ export class Doc extends ObservableV2 {
    * @public
    */
   get (name, TypeConstructor = /** @type {any} */ (AbstractType)) {
+    // get()方法的核心是下面这行代码...
     const type = map.setIfUndefined(this.share, name, () => {
       // @ts-ignore
       const t = new TypeConstructor()
       t._integrate(this, null)
       return t
     })
+
+    // Constr代表name实际的类型
     const Constr = type.constructor
+    // TypeConstructor代表name传入的类型
+
+    // 什么情况下这个if会成立呢？
+    // name实际的类型(Constr)是AbstractType，而name传入的类型(TypeConstructor)是YType
     if (TypeConstructor !== AbstractType && Constr !== TypeConstructor) {
+      // 
       if (Constr === AbstractType) {
+        // 如果name已经被定义过了, 并且使用了AbstractType，而不是某个YType类型, 则使用YType把这个实例重建一下
         // @ts-ignore
         const t = new TypeConstructor()
+
+        // ytype._map里每个value的parent都指向了ytype
         t._map = type._map
         type._map.forEach(/** @param {Item?} n */ n => {
           for (; n !== null; n = n.left) {
@@ -230,11 +271,14 @@ export class Doc extends ObservableV2 {
             n.parent = t
           }
         })
+
+        // ytype._start双向链表里每个元素的parent都指向了ytype
         t._start = type._start
         for (let n = t._start; n !== null; n = n.right) {
           n.parent = t
         }
         t._length = type._length
+
         this.share.set(name, t)
         t._integrate(this, null)
         return /** @type {InstanceType<Type>} */ (t)
@@ -242,6 +286,7 @@ export class Doc extends ObservableV2 {
         throw new Error(`Type with the name ${name} has already been defined with a different constructor`)
       }
     }
+
     return /** @type {InstanceType<Type>} */ (type)
   }
 
@@ -322,6 +367,9 @@ export class Doc extends ObservableV2 {
    * Emit `destroy` event and unregister all event handlers.
    */
   destroy () {
+    // 首先是处理subdocs
+
+    // 先把所有的subdoc都destroy掉
     array.from(this.subdocs).forEach(subdoc => subdoc.destroy())
     const item = this._item
     if (item !== null) {
@@ -337,9 +385,14 @@ export class Doc extends ObservableV2 {
         transaction.subdocsRemoved.add(this)
       }, null, true)
     }
+
     // @ts-ignore
     this.emit('destroyed', [true]) // DEPRECATED!
+
+    // 触发destroy事件
     this.emit('destroy', [this])
+
+    // 这里调用了ObservableV2的destroy()方法，清除其_observers也就是unregister all event handlers
     super.destroy()
   }
 }

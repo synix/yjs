@@ -24,7 +24,9 @@ import * as Y from '../src/index.js'
  * @param {t.TestCase} tc
  */
 export const testStructReferences = tc => {
+  // 这个test case的目的, 是确保contentRefs不要发生breaking change, 即不要随意更改contentRefs数组里元素的次序
   t.assert(contentRefs.length === 11)
+  // contentRefs[10] is reserved for GC structs
   t.assert(contentRefs[1] === readContentDeleted)
   t.assert(contentRefs[2] === readContentJSON) // TODO: deprecate content json?
   t.assert(contentRefs[3] === readContentBinary)
@@ -46,17 +48,43 @@ export const testStructReferences = tc => {
 export const testPermanentUserData = async tc => {
   const ydoc1 = new Doc()
   const ydoc2 = new Doc()
+  // ydoc1: {}
+  // ydoc2: {}
+
   const pd1 = new PermanentUserData(ydoc1)
   const pd2 = new PermanentUserData(ydoc2)
+  // PermanentUserData构造方法，为ydoc1和ydoc2里都创建了一个users的空YMap实例
+  // ydoc1:  {"users":{}}
+  // ydoc2:  {"users":{}}
+
   pd1.setUserMapping(ydoc1, ydoc1.clientID, 'user a')
+  // ydoc1: {"users":{"user a":{"ids":[2287306121],"ds":[]}}}
+  // ydoc2: {"users":{}}
+
   pd2.setUserMapping(ydoc2, ydoc2.clientID, 'user b')
+  // ydoc1: {"users":{"user a":{"ids":[2287306121],"ds":[]}}}
+  // ydoc2: {"users":{"user b":{"ids":[2605152156],"ds":[]}}}
+
   ydoc1.getText().insert(0, 'xhi')
+  // ydoc1: {"users":{"user a":{"ids":[2287306121],"ds":[]}},"":"xhi"}
+  // ydoc2: {"users":{"user b":{"ids":[2605152156],"ds":[]}}}
   ydoc1.getText().delete(0, 1)
+  // ydoc1: {"users":{"user a":{"ids":[2287306121],"ds":[]}},"":"hi"}
+  // ydoc2: {"users":{"user b":{"ids":[2605152156],"ds":[]}}}
   ydoc2.getText().insert(0, 'hxxi')
+  // ydoc1: {"users":{"user a":{"ids":[2287306121],"ds":[]}},"":"hi"}
+  // ydoc2: {"users":{"user b":{"ids":[2605152156],"ds":[]}},"":"hxxi"}
   ydoc2.getText().delete(1, 2)
+  // ydoc1: {"users":{"user a":{"ids":[2287306121],"ds":[]}},"":"hi"}
+  // ydoc2: {"users":{"user b":{"ids":[2605152156],"ds":[]}},"":"hi"}
   await promise.wait(10)
+  
   applyUpdate(ydoc2, encodeStateAsUpdate(ydoc1))
+  // ydoc1: {"users":{"user a":{"ids":[2287306121],"ds":[{"0":1,"1":228,"2":149,"3":135,"4":210,"5":1,"6":1,"7":4,"8":1}]}},"":"hi"}
+  // ydoc2: {"users":{"user b":{"ids":[2605152156],"ds":[{"0":1,"1":229,"2":138,"3":235,"4":133,"5":3,"6":1,"7":5,"8":2}]},"user a":{"ids":[2287306121],"ds":[{"0":1,"1":228,"2":149,"3":135,"4":210,"5":1,"6":1,"7":4,"8":1}]}},"":"hihi"}
   applyUpdate(ydoc1, encodeStateAsUpdate(ydoc2))
+  // ydoc1: {"users":{"user a":{"ids":[1694872641],"ds":[{"0":1,"1":193,"2":232,"3":150,"4":168,"5":6,"6":1,"7":4,"8":1}]},"user b":{"ids":[3411389772],"ds":[{"0":1,"1":204,"2":218,"3":214,"4":218,"5":12,"6":1,"7":5,"8":2}]}},"":"hihi"}
+  // ydoc2: {"users":{"user b":{"ids":[3411389772],"ds":[{"0":1,"1":204,"2":218,"3":214,"4":218,"5":12,"6":1,"7":5,"8":2}]},"user a":{"ids":[1694872641],"ds":[{"0":1,"1":193,"2":232,"3":150,"4":168,"5":6,"6":1,"7":4,"8":1}]}},"":"hihi"}
 
   // now sync a third doc with same name as doc1 and then create PermanentUserData
   const ydoc3 = new Doc()

@@ -79,11 +79,14 @@ export class YArray extends AbstractType {
    * * This type is sent to other client
    * * Observer functions are fired
    *
+   * os == operation set? (比如insert??)
    * @param {Doc} y The Yjs instance
    * @param {Item} item
    */
   _integrate (y, item) {
     super._integrate(y, item)
+
+    // 把在_prelimContent中预存的内容插入到YArray中
     this.insert(0, /** @type {Array<any>} */ (this._prelimContent))
     this._prelimContent = null
   }
@@ -148,7 +151,7 @@ export class YArray extends AbstractType {
    * @param {Array<T>} content The array of content
    */
   insert (index, content) {
-    // 注意: 这里content是数组，待插入到index索引处
+    // 注意: 这里content是数组，待插入到索引index处
     // 如果this.doc不为null，说明已经执行过_integrate()方法，直接调用typeListInsertGenerics()方法
     if (this.doc !== null) {
       transact(this.doc, transaction => {

@@ -4,6 +4,7 @@ import {
 
 import * as error from 'lib0/error'
 
+// ContentBinary用来存储Uint8Array/ArrayBuffer
 export class ContentBinary {
   /**
    * @param {Uint8Array} content

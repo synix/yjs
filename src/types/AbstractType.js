@@ -286,25 +286,30 @@ export class AbstractType {
   constructor () {
     /**
      * @type {Item|null}
-     * 维护和Item实例一对一的关系
+     * 维护和Item实例一对一的mapping关系
+     * 
+     * The item and type object pair have a 1-1 mapping. 
+     * The item's content field references the AbstractType object and the AbstractType object's _item field references the item.
+     * 
+     * 如果ytype直接放在Y.Doc实例的share Map里, 那么这个ytype的_item就是null
      */
     this._item = null
     /**
      * @type {Map<string,Item>}
-     * 这个_map是专供YMap使用的吗?
+     * 这个_map目前是给YMap和YText使用的
      */
     this._map = new Map()
     /**
      * @type {Item|null}
-     * 说明每个YType内部都有一个Item双向链表，_start是这个链表的头指针
-     * 链表的每个元素都是一个Item对象，Item对象包含了当前Item的内容(内容的类型为AbstractContent)，以及指向前一个Item的left指针，指向后一个Item的right指针
+     * 每个YType都是截取了Item双向链表的一部分视图(view),呈现给用户, _start截取部分的头指针, _length代表截取部分的长度
+     * 双向链表的每个元素都是一个Item对象，Item对象包含了当前Item的内容(内容的类型为AbstractContent)，以及指向前一个Item的left指针，指向后一个Item的right指针
      */
     this._start = null
     /**
      * @type {Doc|null}
      */
     this.doc = null
-    // 这个_length代表的并不是链表的元素个数，而是深入一层到Item的content里，然后把所有链表元素的content的length相加
+    // 这个_length代表的并不是截取部分链表的元素个数，而是深入一层到Item的content里，然后把截取到的所有Item的content的length相加起来
     this._length = 0
     /**
      * Event handlers
@@ -318,8 +323,10 @@ export class AbstractType {
     this._dEH = createEventHandler()
     /**
      * @type {null | Array<ArraySearchMarker>}
-     * 因为YType内部是一个双向链表(_start代表头指针)，那么链表的按index查找元素的性能是比较慢的
+     * 因为YType维护一个双向链表(_start代表头指针)，而链表按index查找元素的性能是比较差的
      * 所以这里将查找结果缓存起来，也就是把index和Item的映射关系存储在_searchMarker数组里
+     * 
+     * 这个_searchMarker数组的元素是ArraySearchMarker对象，它包含了一个Item对象和一个index值
      */
     this._searchMarker = null
   }
@@ -333,6 +340,8 @@ export class AbstractType {
 
   /**
    * Integrate this type into the Yjs instance.
+   * 
+   * y代表YDoc实例，_item代表这个ytype对应的Item实例, 这个Item实例的parent指向这个ytype的父ytype
    *
    * * Save this struct in the os
    * * This type is sent to other client
@@ -761,7 +770,7 @@ const lengthExceeded = () => error.create('Length exceeded!')
  * @function
  */
 export const typeListInsertGenerics = (transaction, parent, index, content) => {
-  // 如果插入位置超过了超过了parent容器的_length，就抛出异常
+  // 如果插入位置超过了超过了parent的_length，就抛出异常
   if (index > parent._length) {
     throw lengthExceeded()
   }

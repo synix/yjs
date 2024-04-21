@@ -10,6 +10,7 @@ export class AbstractStruct {
    * @param {number} length
    */
   constructor (id, length) {
+    // 这个id关联的并不是这个Item，而是Item的content(的首字符)
     this.id = id
     this.length = length
   }

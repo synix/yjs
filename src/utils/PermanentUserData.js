@@ -11,6 +11,7 @@ import * as decoding from 'lib0/decoding'
 
 import { mergeDeleteSets, isDeleted } from './DeleteSet.js'
 
+// PermanentUserData这个类目前是实验性的, 仅用于`tests/encoding.tests.js`的测试用例中
 export class PermanentUserData {
   /**
    * @param {Doc} doc
@@ -19,8 +20,14 @@ export class PermanentUserData {
   constructor (doc, storeType = doc.getMap('users')) {
     /**
      * @type {Map<string,DeleteSet>}
+     * dss又是什么缩写? DeleteSet的set
+     * dss这个map的key应该是用户的userDescription, value是DeleteSet实例
      */
     const dss = new Map()
+    // yusers是一个YMap实例，key是userDescription字符串, value是一个YMap实例
+    // value这个YMap实例包括的key有'ds'和'ids'
+    // ds对应的value是一个YArray, 元素为DeleteSet实例
+    // ids对应的value是一个YArray，元素为clientId
     this.yusers = storeType
     this.doc = doc
     /**
@@ -28,8 +35,8 @@ export class PermanentUserData {
      *
      * @type {Map<number,string>}
      */
-    this.clients = new Map()
-    this.dss = dss
+    this.clients = new Map() // 保存clientId到userDescription字符串的对应关系
+    this.dss = dss  // 保存userDescription到DeleteSet实例的对应关系
     /**
      * @param {YMap<any>} user
      * @param {string} userDescription
@@ -40,7 +47,9 @@ export class PermanentUserData {
        */
       const ds = user.get('ds')
       const ids = user.get('ids')
+
       const addClientId = /** @param {number} clientid */ clientid => this.clients.set(clientid, userDescription)
+
       ds.observe(/** @param {YArrayEvent<any>} event */ event => {
         event.changes.added.forEach(item => {
           item.content.getContent().forEach(encodedDs => {
@@ -50,18 +59,23 @@ export class PermanentUserData {
           })
         })
       })
+
       this.dss.set(userDescription, mergeDeleteSets(ds.map(encodedDs => readDeleteSet(new DSDecoderV1(decoding.createDecoder(encodedDs))))))
+
       ids.observe(/** @param {YArrayEvent<any>} event */ event =>
         event.changes.added.forEach(item => item.content.getContent().forEach(addClientId))
       )
+
       ids.forEach(addClientId)
     }
+
     // observe users
     storeType.observe(event => {
       event.keysChanged.forEach(userDescription =>
         initUser(storeType.get(userDescription), userDescription)
       )
     })
+
     // add intial data
     storeType.forEach(initUser)
   }
@@ -82,7 +96,9 @@ export class PermanentUserData {
       user.set('ds', new YArray())
       users.set(userDescription, user)
     }
+
     user.get('ids').push([clientid])
+
     users.observe(_event => {
       setTimeout(() => {
         const userOverwrite = users.get(userDescription)
@@ -105,6 +121,7 @@ export class PermanentUserData {
         }
       }, 0)
     })
+
     doc.on('afterTransaction', /** @param {Transaction} transaction */ transaction => {
       setTimeout(() => {
         const yds = user.get('ds')

@@ -285,6 +285,9 @@ export class Item extends AbstractStruct {
      * key is specified here. The key is then used to refer to the list in which
      * to insert this item. If `parentSub = null` type._start is the list in
      * which to insert to. Otherwise it is `parent._map`.
+     * 
+     * parentSub用来存储YMap的key, content则是存储YMap的value
+     * 
      * @type {String | null}
      */
     this.parentSub = parentSub
@@ -338,7 +341,7 @@ export class Item extends AbstractStruct {
     }
   }
 
-  // countable是什么意思?
+  // countable为true, 表示这个Item的length是要计入的
   get countable () {
     return (this.info & binary.BIT2) > 0
   }
@@ -363,33 +366,45 @@ export class Item extends AbstractStruct {
 
   /**
    * Return the creator clientID of the missing op or define missing items and return null.
+   * 
+   * 返回的是一个client id或者null，代表把Item对象integrate到本地Doc时，哪个client id的数据是缺失的
+   * 而这个client id来自于3个方面: 这个Item对象的origin/rightOrigin/parent
    *
    * @param {Transaction} transaction
    * @param {StructStore} store
    * @return {null | number}
    */
   getMissing (transaction, store) {
+    // 调用getMissing()方法时, 因为Item对象是remote传入的，所以其origin和rightOrigin是在remote端插入时写入的, 而left/right是未定义的
     if (this.origin && this.origin.client !== this.id.client && this.origin.clock >= getState(store, this.origin.client)) {
+      // 当前Item对象的client id不等于其origin的client id, 并且其origin的clock大于本地的，说明其origin所对应client id的数据在本地doc(本地StructStore)是有缺失的
       return this.origin.client
     }
     if (this.rightOrigin && this.rightOrigin.client !== this.id.client && this.rightOrigin.clock >= getState(store, this.rightOrigin.client)) {
+      // 当前Item对象的client id不等于其rightOrigin的client id, 并且其rightOrigin的clock大于本地的，说明其rightOrigin所对应的client id的数据在本地doc(本地StructStore)是有缺失的
       return this.rightOrigin.client
     }
+
     if (this.parent && this.parent.constructor === ID && this.id.client !== this.parent.client && this.parent.clock >= getState(store, this.parent.client)) {
+      // 当前Item对象的client id不等于其parent的client id, 并且其parent的clock大于本地的，说明其parent所对应的client id的数据在本地doc(本地StructStore)是有缺失的
       return this.parent.client
     }
 
     // We have all missing ids, now find the items
 
+    // 给Item对象的left/right赋值, 给origin/rightOrigin重新赋值
     if (this.origin) {
       this.left = getItemCleanEnd(transaction, store, this.origin)
       this.origin = this.left.lastId
     }
+
     if (this.rightOrigin) {
       this.right = getItemCleanStart(transaction, this.rightOrigin)
       this.rightOrigin = this.right.id
     }
+
     if ((this.left && this.left.constructor === GC) || (this.right && this.right.constructor === GC)) {
+      // 这是为什么呢??
       this.parent = null
     } else if (!this.parent) {
       // only set parent if this shouldn't be garbage collected
@@ -397,6 +412,7 @@ export class Item extends AbstractStruct {
         this.parent = this.left.parent
         this.parentSub = this.left.parentSub
       }
+
       if (this.right && this.right.constructor === Item) {
         this.parent = this.right.parent
         this.parentSub = this.right.parentSub
@@ -409,6 +425,7 @@ export class Item extends AbstractStruct {
         this.parent = /** @type {ContentType} */ (parentItem.content).type
       }
     }
+
     return null
   }
 
@@ -426,6 +443,7 @@ export class Item extends AbstractStruct {
     }
 
     if (this.parent) {
+      // 这个if判断是什么鬼逻辑?
       if ((!this.left && (!this.right || this.right.left !== null)) || (this.left && this.left.right !== this.right)) {
         /**
          * @type {Item|null}
@@ -457,23 +475,37 @@ export class Item extends AbstractStruct {
          * @type {Set<Item>}
          */
         const itemsBeforeOrigin = new Set()
+
+        // 下面两行注释完全看不懂...
         // Let c in conflictingItems, b in itemsBeforeOrigin
         // ***{origin}bbbb{this}{c,b}{c,b}{o}***
+
         // Note that conflictingItems is a subset of itemsBeforeOrigin
+
+        // 从此item的left指针遍历到right指针, 在这个区间的item都是和此item有可能发生冲突的
         while (o !== null && o !== this.right) {
           itemsBeforeOrigin.add(o)
           conflictingItems.add(o)
-          if (compareIDs(this.origin, o.origin)) {
+          if (compareIDs(this.origin, o.origin)) { // 冲突情况1: 此Item和o的origin相等, 发生冲突
             // case 1
             if (o.id.client < this.id.client) {
+              // 通过对比client id的大小, 发现o的client id比此Item的小，则此Item的left指针指向o, 即此Item在o右边, 冲突解决
               left = o
               conflictingItems.clear()
-            } else if (compareIDs(this.rightOrigin, o.rightOrigin)) {
+            } else if (compareIDs(this.rightOrigin, o.rightOrigin)) {  
+              // 此Item的client id比o的小, 此Item本应放在o左边, 即此Item的rightOrigin至少为o
+              // 但是满足了这个条件, 又说明此Item和o的rightOrigin是相等的, Item又应该在o的左边, 所以这个冲突无法解决, 并且再遍历到right指针也没有意义, 所以break跳出while循环
+
               // this and o are conflicting and point to the same integration points. The id decides which item comes first.
               // Since this is to the left of o, we can break here
               break
-            } // else, o might be integrated before an item that this conflicts with. If so, we will find it in the next iterations
+            } 
+            // else, o might be integrated before an item that this conflicts with. If so, we will find it in the next iterations
+            // 继续white循环遍历下一个item，把冲突解决寄希望于以后
           } else if (o.origin !== null && itemsBeforeOrigin.has(getItem(transaction.doc.store, o.origin))) { // use getItem instead of getItemCleanEnd because we don't want / need to split items.
+            // 冲突情况2: 此Item和o的origin发生交叉，发生冲突。也就是o.origin所命中的Item实例，被包含在itemsBeforeOrigin里
+            // 这种情况将o放在此Item左边，即此item的left指针指向o, 冲突解决
+
             // case 2
             if (!conflictingItems.has(getItem(transaction.doc.store, o.origin))) {
               left = o
@@ -482,12 +514,16 @@ export class Item extends AbstractStruct {
           } else {
             break
           }
+
           o = o.right
         }
+
         this.left = left
       }
+
       // reconnect left/right + update parent map/start if necessary
       if (this.left !== null) {
+        // 把该Item对象插入到双向链表中间
         const right = this.left.right
         this.right = right
         this.left.right = this
@@ -499,11 +535,13 @@ export class Item extends AbstractStruct {
             r = r.left
           }
         } else {
+          // 把该Item对象插入到链表头
           r = /** @type {AbstractType<any>} */ (this.parent)._start
           ;/** @type {AbstractType<any>} */ (this.parent)._start = this
         }
         this.right = r
       }
+
       if (this.right !== null) {
         this.right.left = this
       } else if (this.parentSub !== null) {
@@ -514,11 +552,16 @@ export class Item extends AbstractStruct {
           this.left.delete(transaction)
         }
       }
+
       // adjust length of parent
       if (this.parentSub === null && this.countable && !this.deleted) {
         /** @type {AbstractType<any>} */ (this.parent)._length += this.length
       }
+
+      // 把此Item对象链接于文档序的双向链表之后, 再将其放入插入序的StructStore中
       addStruct(transaction.doc.store, this)
+
+      // 再将Item对象的content进行integrate, 最终会将对应的ytype进行_integrate
       this.content.integrate(transaction, this)
       // add parent to transaction.changed
       addChangedTypeToTransaction(transaction, /** @type {AbstractType<any>} */ (this.parent), this.parentSub)
@@ -667,6 +710,8 @@ export class Item extends AbstractStruct {
       (rightOrigin === null ? 0 : binary.BIT7) | // right origin is defined
       (parentSub === null ? 0 : binary.BIT6) // parentSub is non-null
     encoder.writeInfo(info)
+
+    // 主要写入3个信息: origin/rightOrigin/content
     if (origin !== null) {
       encoder.writeLeftID(origin)
     }
@@ -717,6 +762,7 @@ export const readItemContent = (decoder, info) => contentRefs[info & binary.BITS
  * @type {Array<function(UpdateDecoderV1 | UpdateDecoderV2):AbstractContent>}
  */
 export const contentRefs = [
+  // 这里0到10也就是ContentXXX类型的getRef()方法的返回值
   () => { error.unexpectedCase() }, // GC is not ItemContent
   readContentDeleted, // 1
   readContentJSON, // 2
