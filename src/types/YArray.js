@@ -32,7 +32,7 @@ export class YArrayEvent extends YEvent {
    */
   constructor (yarray, transaction) {
     super(yarray, transaction)
-    this._transaction = transaction
+    // this._transaction = transaction
   }
 }
 
@@ -51,6 +51,7 @@ export class YArray extends AbstractType {
      * prelim是预赛的意思，这里的_prelimContent是指在this.doc为null(未执行过_integrate()方法)的情况下，对YArray进行操作的时候，将操作的内容先缓存在_prelimContent中
      */
     this._prelimContent = []
+
     /**
      * @type {Array<ArraySearchMarker>}
      */
@@ -131,6 +132,7 @@ export class YArray extends AbstractType {
    */
   _callObserver (transaction, parentSubs) {
     super._callObserver(transaction, parentSubs)
+    // 注意YArrayEvent是未使用parentSubs的
     callTypeObservers(this, transaction, new YArrayEvent(this, transaction))
   }
 

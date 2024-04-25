@@ -154,6 +154,10 @@ export const decodeUpdate = (update) => decodeUpdateV2(update, UpdateDecoderV1)
 /**
  * @param {Uint8Array} update
  * @param {typeof UpdateDecoderV2 | typeof UpdateDecoderV1} [YDecoder]
+ * 
+ * decodeUpdateV2()函数将update(类型为Uint8Array) decode为一个对象,包括structs和ds两个字段
+ * structs为Item|Skip|GC实例的数组
+ * ds为DeleteSet实例
  *
  */
 export const decodeUpdateV2 = (update, YDecoder = UpdateDecoderV2) => {

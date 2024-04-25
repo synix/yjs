@@ -74,6 +74,8 @@ const writeStructs = (encoder, structs, client, clock) => {
  * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
  * @param {StructStore} store
  * @param {Map<number,number>} _sm
+ * 
+ * 这个函数是以_sm为基准，把store里新增的Item/Skip/GC实例写入到encoder里
  *
  * @private
  * @function
@@ -81,12 +83,12 @@ const writeStructs = (encoder, structs, client, clock) => {
 export const writeClientsStructs = (encoder, store, _sm) => {
   // we filter all valid _sm entries into sm
 
-  // sm这个map里存的是clientId和clock的对应关系
+  // sm这个map里存的是client id和clock的对应关系，如果client id存在新增
   const sm = new Map()
 
   _sm.forEach((clock, client) => {
     // only write if new structs are available
-    // 如果当前ydoc的StructStore里对应clientId的clock比传入的_sm中相应clientId的clock值大，说明当前ydoc对于该clientId有从clock开始的新增Struct
+    // 如果ydoc的StructStore里对应clientId的clock比传入的_sm中的值大，说明是有新增struct的
     if (getState(store, client) > clock) {
       sm.set(client, clock)
     }
@@ -103,7 +105,9 @@ export const writeClientsStructs = (encoder, store, _sm) => {
 
   // Write items with higher client ids first
   // This heavily improves the conflict algorithm.
-  // clientId从大到小排序
+  // client id的值从大到小排序
+
+  // 这里a[0], b[0]是sm的key, 也就是client id
   array.from(sm.entries()).sort((a, b) => b[0] - a[0]).forEach(([client, clock]) => {
     writeStructs(encoder, /** @type {Array<GC|Item>} */ (store.clients.get(client)), client, clock)
   })
@@ -114,8 +118,8 @@ export const writeClientsStructs = (encoder, store, _sm) => {
  * @param {Doc} doc
  * @return {Map<number, { i: number, refs: Array<Item | GC> }>}
  * 
- * 返回值是一个map，key是client id，value是一个对象，包含i和refs两个字段
- * 从readClientsStructRefs()返回时, i等于0，refs数组里Item对象的left/right字段是未赋值的
+ * 返回值是一个map，key是client id，value是一个对象，包含i和refs两个字段(i代表refs数组下一个待处理的数组index, 初始值为0)
+ * 从readClientsStructRefs()返回时, i等于0，refs数组里Item对象的origin/rightOrigin字段是remote传入的，而left/right字段remote是未传入的, 所以是未赋值的
  *
  * @private
  * @function
@@ -296,7 +300,7 @@ const integrateStructs = (transaction, store, clientsStructRefs) => {
    */
   const restStructs = new StructStore()
 
-  // 在下述white循环里, 记录某个client因为某个clock值()未满足而导致本地有缺失(Missing)
+  // 在下述white循环里, 记录某个client因为某个clock值未满足预期而导致本地有缺失(Missing)
   // client id -> clock 对应关系
   const missingSV = new Map()
   /**
@@ -451,43 +455,67 @@ export const readUpdateV2 = (decoder, ydoc, transactionOrigin, structDecoder = n
   // update会通过传入的strcutDecoder逐步decode出来
   transact(ydoc, transaction => {
     // force that transaction.local is set to non-local
-    // 代表这个transaction是remote发起的
-    transaction.local = false
+    transaction.local = false  // 代表这个transaction是remote发起的
     let retry = false
     const doc = transaction.doc
     const store = doc.store
     // let start = performance.now()
+
+    // 1. 从update里读取所有的structs(Item/Skip/GC实例)
     const ss = readClientsStructRefs(structDecoder, doc)
     // console.log('time to read structs: ', performance.now() - start) // @todo remove
     // start = performance.now()
     // console.log('time to merge: ', performance.now() - start) // @todo remove
     // start = performance.now()
+
+    // 2. 将structs integrate或者说apply给ydoc
+    // 也就是将structs里的Item/Skip/GC实例链接到其parent的双向链表中，以及存储在本地ydoc的StructStore里
+
+    // 返回的restStructs或是一个对象(包括missing和update两个字段), 或是null
+    // missing: 记录某个client因为某个clock值未满足而导致本地有缺失(Missing)
+    // update: 记录ss里未执行integrate的Item/GC对象
     const restStructs = integrateStructs(transaction, store, ss)
+
+    // 3. 将integrateStructs()未处理完的，暂存在本地ydoc StructStore的pendingStructs字段中
     const pending = store.pendingStructs
     if (pending) {
       // check if we can apply something
       for (const [client, clock] of pending.missing) {
         if (clock < getState(store, client)) {
+          // 如果pending.missing里某个client id所记录的缺失的clock值，小于StructStore里的clock值, 说明本地StructStore是有pendingStructs继续apply的
+          // retry为true就代表有这种情况存在
           retry = true
           break
         }
       }
+
       if (restStructs) {
         // merge restStructs into store.pending
+
+        // 将restStructs返回的missing情况，merge进pending.missing
         for (const [client, clock] of restStructs.missing) {
           const mclock = pending.missing.get(client)
           if (mclock == null || mclock > clock) {
             pending.missing.set(client, clock)
           }
         }
+
+        // 将restStructs返回的update，merge进pending.update
         pending.update = mergeUpdatesV2([pending.update, restStructs.update])
       }
     } else {
+      // 如果store.pendingStructs原本为null, 则将返回的restStructs直接赋给store.pendingStructs
       store.pendingStructs = restStructs
     }
+
     // console.log('time to integrate: ', performance.now() - start) // @todo remove
     // start = performance.now()
+
+    // 4. 把remote ds apply到本地
+
+    // 返回的dsRest是未处理完的ds
     const dsRest = readAndApplyDeleteSet(structDecoder, transaction, store)
+
     if (store.pendingDs) {
       // @todo we could make a lower-bound state-vector check as we do above
       const pendingDSUpdate = new UpdateDecoderV2(decoding.createDecoder(store.pendingDs))
@@ -593,7 +621,7 @@ export const writeStateAsUpdate = (encoder, doc, targetStateVector = new Map()) 
  */
 export const encodeStateAsUpdateV2 = (doc, encodedTargetStateVector = new Uint8Array([0]), encoder = new UpdateEncoderV2()) => {
   const targetStateVector = decodeStateVector(encodedTargetStateVector)
-  // 这个函数的核心在于下面这行👇
+  // 把本地StructStore转成update写入
   writeStateAsUpdate(encoder, doc, targetStateVector)
   // 执行完下面这行代码, updates数组长度为1
   const updates = [encoder.toUint8Array()]
@@ -605,7 +633,7 @@ export const encodeStateAsUpdateV2 = (doc, encodedTargetStateVector = new Uint8A
     updates.push(diffUpdateV2(doc.store.pendingStructs.update, encodedTargetStateVector))
   }
 
-  // updates数组长度大于1, 说明至少StructStore是有pendingDs或pendingStructs的
+  // updates数组长度大于1, 说明StructStore只是是有pendingDs或pendingStructs之一的
   if (updates.length > 1) {
     if (encoder.constructor === UpdateEncoderV1) {
       return mergeUpdates(updates.map((update, i) => i === 0 ? update : convertUpdateFormatV2ToV1(update)))
@@ -614,6 +642,7 @@ export const encodeStateAsUpdateV2 = (doc, encodedTargetStateVector = new Uint8A
     }
   }
 
+  // encodeStateAsUpdateV2()返回的是一个update数组, 长度为1
   return updates[0]
 }
 
@@ -626,6 +655,8 @@ export const encodeStateAsUpdateV2 = (doc, encodedTargetStateVector = new Uint8A
  * @param {Doc} doc
  * @param {Uint8Array} [encodedTargetStateVector] The state of the target that receives the update. Leave empty to write all known structs
  * @return {Uint8Array}
+ * 
+ * encodeStateAsUpdate()和encodeStateAsUpdateV2()的区别在于, 第2个参数encoder的类型不同, 一个是UpdateEncoderV1, 一个是UpdateEncoderV2
  *
  * @function
  */

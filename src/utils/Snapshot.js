@@ -53,19 +53,24 @@ export const equalSnapshots = (snap1, snap2) => {
   const ds2 = snap2.ds.clients
   const sv1 = snap1.sv
   const sv2 = snap2.sv
+
   if (sv1.size !== sv2.size || ds1.size !== ds2.size) {
     return false
   }
+
   for (const [key, value] of sv1.entries()) {
     if (sv2.get(key) !== value) {
       return false
     }
   }
+
   for (const [client, dsitems1] of ds1.entries()) {
     const dsitems2 = ds2.get(client) || []
+
     if (dsitems1.length !== dsitems2.length) {
       return false
     }
+
     for (let i = 0; i < dsitems1.length; i++) {
       const dsitem1 = dsitems1[i]
       const dsitem2 = dsitems2[i]
@@ -74,6 +79,7 @@ export const equalSnapshots = (snap1, snap2) => {
       }
     }
   }
+
   return true
 }
 
@@ -113,6 +119,8 @@ export const decodeSnapshot = buf => decodeSnapshotV2(buf, new DSDecoderV1(decod
  * @param {DeleteSet} ds
  * @param {Map<number,number>} sm
  * @return {Snapshot}
+ * 
+ * 仅仅只是封装了Snapshot类构造函数的工厂方法
  */
 export const createSnapshot = (ds, sm) => new Snapshot(ds, sm)
 
@@ -127,6 +135,9 @@ export const snapshot = doc => createSnapshot(createDeleteSetFromStructStore(doc
 /**
  * @param {Item} item
  * @param {Snapshot|undefined} snapshot
+ * 
+ * 如果未传入snapshot，那么只要item没有被标记为删除，就返回true
+ * 如果传入了snapshot，那么只要item的id在snapshot.sv中存在，且对应的clock大于item.id.clock，且item没有被标记为删除，就返回true
  *
  * @protected
  * @function

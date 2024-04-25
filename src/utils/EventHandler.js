@@ -11,6 +11,8 @@ export class EventHandler {
   constructor () {
     /**
      * @type {Array<function(ARG0, ARG1):void>}
+     * 
+     * 这里l是一个数组，数组的每个元素都是1个函数，这些函数都是通过addEventHandlerListener()方法添加的
      */
     this.l = []
   }
@@ -84,4 +86,5 @@ export const removeAllEventHandlerListeners = eventHandler => {
  * @function
  */
 export const callEventHandlerListeners = (eventHandler, arg0, arg1) =>
+  // 调用eventHandler.l数组中的每个函数，arg0和arg1作为入参
   f.callAll(eventHandler.l, [arg0, arg1])

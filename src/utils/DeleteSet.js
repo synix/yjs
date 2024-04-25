@@ -112,24 +112,34 @@ export const isDeleted = (ds, id) => {
  */
 export const sortAndMergeDeleteSet = ds => {
   ds.clients.forEach(dels => {
+    // 每个client id对应的DeleteItem数组按照clock值从小到大排序
     dels.sort((a, b) => a.clock - b.clock)
     // merge items without filtering or splicing the array
     // i is the current pointer
     // j refers to the current insert position for the pointed item
     // try to merge dels[i] into dels[j-1] or set dels[j]=dels[i]
     let i, j
+
+    // i 不断向右移动，遍历dels数组
+    // j - 1 指向下一个待和其右侧元素merge的位置
     for (i = 1, j = 1; i < dels.length; i++) {
       const left = dels[j - 1]
       const right = dels[i]
-      if (left.clock + left.len >= right.clock) {
+      if (left.clock + left.len >= right.clock) { // left和right存在overlap
+        // 将right merge到left
         left.len = math.max(left.len, right.clock + right.len - left.clock)
+        // 因为合并了，所以dels数组长度未增加, 所以j不变, 继续处理下一个right
       } else {
+        // j - 1未能和i merge，所以将j要前移1位，并把i的值赋给j指向的位置
         if (j < i) {
           dels[j] = right
         }
+        // j移到下一个位置，以使得下次循环判断j - 1和i是否能merge
         j++
       }
     }
+
+    // 上述for循环执行完，j就是merge后的dels数组长度
     dels.length = j
   })
 }
@@ -250,11 +260,11 @@ export const readDeleteSet = decoder => {
   const numClients = decoding.readVarUint(decoder.restDecoder)
   for (let i = 0; i < numClients; i++) {
     decoder.resetDsCurVal()
-    // client id
+    // client也就是client id
     const client = decoding.readVarUint(decoder.restDecoder)
     const numberOfDeletes = decoding.readVarUint(decoder.restDecoder)
     if (numberOfDeletes > 0) {
-      // clients是一个Map，key是client id，value是一个DeleteItem数组
+      // clients是一个Map，key是client id，value是DeleteItem数组
       const dsField = map.setIfUndefined(ds.clients, client, () => /** @type {Array<DeleteItem>} */ ([]))
       for (let i = 0; i < numberOfDeletes; i++) {
         dsField.push(new DeleteItem(decoder.readDsClock(), decoder.readDsLen()))
@@ -278,7 +288,9 @@ export const readDeleteSet = decoder => {
  * @function
  */
 export const readAndApplyDeleteSet = (decoder, transaction, store) => {
+  // 收集未apply到本地的ds，也就是本地对应的struct未执行struct.delete()
   const unappliedDS = new DeleteSet()
+
   const numClients = decoding.readVarUint(decoder.restDecoder)
   for (let i = 0; i < numClients; i++) {
     decoder.resetDsCurVal()
@@ -286,13 +298,21 @@ export const readAndApplyDeleteSet = (decoder, transaction, store) => {
     const numberOfDeletes = decoding.readVarUint(decoder.restDecoder)
     const structs = store.clients.get(client) || []
     const state = getState(store, client)
+
     for (let i = 0; i < numberOfDeletes; i++) {
       const clock = decoder.readDsClock()
       const clockEnd = clock + decoder.readDsLen()
-      if (clock < state) {
+      
+      if (clock < state) { // 读取到的remote ds里对应client id的clock值比本地StructStore里的小
         if (state < clockEnd) {
+          // 满足了关系 clock < state < clockEnd
+          // 需要将从state开始，长度为clockEnd - state的部分，收集到unappliedDS里，因为这部分本地StructStore是不存在的
+          // 也就是将state到clockEnd这部分处理掉
           addToDeleteSet(unappliedDS, client, state, clockEnd - state)
         }
+
+        // 满足了关系clock < state
+        // 接下来就处理clock到state这部分
         let index = findIndexSS(structs, clock)
         /**
          * We can ignore the case of GC and Delete structs, because we are going to skip them
@@ -313,6 +333,8 @@ export const readAndApplyDeleteSet = (decoder, transaction, store) => {
               if (clockEnd < struct.id.clock + struct.length) {
                 structs.splice(index, 0, splitItem(transaction, struct, clockEnd - struct.id.clock))
               }
+
+              // 将remote ds里标记删除的struct, 真正地apply到本地StrcutStore
               struct.delete(transaction)
             }
           } else {
@@ -320,6 +342,8 @@ export const readAndApplyDeleteSet = (decoder, transaction, store) => {
           }
         }
       } else {
+        // 读取到的remote里对应client id的clock值比本地StructStore里的大
+        // 也就是这部分ds本地还未收到, 还无法处理, 只能收集进unappliedDS里
         addToDeleteSet(unappliedDS, client, clock, clockEnd - clock)
       }
     }

@@ -37,7 +37,6 @@ export class ArraySearchMarker {
   constructor (p, index) {
     p.marker = true
     this.p = p
-    // index是用来做什么的?
     this.index = index
     this.timestamp = globalSearchMarkerTimestamp++
   }
@@ -267,64 +266,108 @@ export const callTypeObservers = (type, transaction, event) => {
   const changedType = type
   const changedParentTypes = transaction.changedParentTypes
   while (true) {
+    // 给此type的所有父type添加event
+
     // @ts-ignore
     map.setIfUndefined(changedParentTypes, type, () => []).push(event)
+    // 触及到顶层ytype对象，也就是放在Y.Doc实例的share Map里的ytype对象了
     if (type._item === null) {
       break
     }
+    // 沿着parent向上遍历
     type = /** @type {AbstractType<any>} */ (type._item.parent)
   }
+
+  // 触发所有ytype._eH中注册的handler
   callEventHandlerListeners(changedType._eH, event, transaction)
 }
 
 /**
  * @template EventType
  * Abstract Yjs Type class
+ * 
  * YText/YArray/YMap/YXmlFragment的父类
+ * 虽然命名为AbstractType，但是它并不是一个抽象类，而是可以实例化的
+ * 
+ * 细数一下yjs中核心类之间的关系:
+ * 
+ * YType(也就是AbstractType及其子类):
+ *  _item: 维系和Item对象的一对一关系
+ *  _map: 如果ytype(譬如YMap对象)内部结构是一个map, _map就是这个map
+ *  _start: 如果ytype(譬如YArray对象)内部结构是一个双向链表，_start就是链表的头指针
+ *  _length: 不是链表的元素个数，而是深入一层到Item的content里，把截取到的所有Item的content的length相加起来
+ * 
+ *  👆_map和_start/_length是二选一
+ * 
+ * Item:
+ *  parent: 父ytype, 比如YArray或者YMap
+ *  parentSub: 当parent为YMap时, parentSub是parent的某个key
+ *  left/right: 构成双向链表的左右指针
+ *  content: Item实例实际存放的内容, 维系和ytype的一对一关系
+ * 
  */
 export class AbstractType {
   constructor () {
     /**
      * @type {Item|null}
-     * 维护和Item实例一对一的mapping关系
+     * 
+     * 维护和Item实例一对一的映射关系
      * 
      * The item and type object pair have a 1-1 mapping. 
      * The item's content field references the AbstractType object and the AbstractType object's _item field references the item.
      * 
      * 如果ytype直接放在Y.Doc实例的share Map里, 那么这个ytype的_item就是null
+     * 
      */
     this._item = null
+
     /**
      * @type {Map<string,Item>}
-     * 这个_map目前是给YMap和YText使用的
+     * 这个_map是给YMap和YText使用的
      */
     this._map = new Map()
+
     /**
      * @type {Item|null}
-     * 每个YType都是截取了Item双向链表的一部分视图(view),呈现给用户, _start截取部分的头指针, _length代表截取部分的长度
-     * 双向链表的每个元素都是一个Item对象，Item对象包含了当前Item的内容(内容的类型为AbstractContent)，以及指向前一个Item的left指针，指向后一个Item的right指针
+     * 
+     * 每个ytype都是双向链表呈现给用户的视图(view), _start是头指针
+     * 双向链表的每个元素都是一个Item对象，Item对象包含了当前Item的内容(content字段)，以及指向前一个Item的left指针，指向后一个Item的right指针
      */
     this._start = null
+
     /**
      * @type {Doc|null}
+     * 
+     * _integrate()被调用时doc会被赋值, 表示这个ytype被integrate到了这个ydoc实例里
      */
     this.doc = null
-    // 这个_length代表的并不是截取部分链表的元素个数，而是深入一层到Item的content里，然后把截取到的所有Item的content的length相加起来
+
+    // 这个_length代表的并不是链表的元素个数，而是深入一层到Item的content里，把所有Item的content的length相加起来
     this._length = 0
+
     /**
      * Event handlers
      * @type {EventHandler<EventType,Transaction>}
+     * 
+     * eH是Event Handler的缩写
+     * 调用observe()方法注册的handler，都会被添加到_eH的l数组里
      */
     this._eH = createEventHandler()
+
     /**
      * Deep event handlers
      * @type {EventHandler<Array<YEvent<any>>,Transaction>}
+     * 
+     * dEH是Deep Event Handler的缩写
+     * 调用observeDeep()方法注册的handler，都会被添加到_dEH的l数组里
      */
     this._dEH = createEventHandler()
+
     /**
      * @type {null | Array<ArraySearchMarker>}
-     * 因为YType维护一个双向链表(_start代表头指针)，而链表按index查找元素的性能是比较差的
+     * 因为双向链表按index查找元素的性能是比较差的
      * 所以这里将查找结果缓存起来，也就是把index和Item的映射关系存储在_searchMarker数组里
+     * search marker是作者最初在代码实现时采用的名字, 其实叫做skiplist更专业一些
      * 
      * 这个_searchMarker数组的元素是ArraySearchMarker对象，它包含了一个Item对象和一个index值
      */
@@ -397,6 +440,7 @@ export class AbstractType {
    * @param {Set<null|string>} _parentSubs Keys changed on this type. `null` if list was modified.
    */
   _callObserver (transaction, _parentSubs) {
+    // 如果transaction.local为false, 即这个transaction是由remote发起的，那么就清空_searchMarker数组。为什么??
     if (!transaction.local && this._searchMarker) {
       this._searchMarker.length = 0
     }

@@ -31,6 +31,7 @@ export class YMapEvent extends YEvent {
    */
   constructor (ymap, transaction, subs) {
     super(ymap, transaction)
+    // subs传入的是一个set，表示ymap中发生变化的key
     this.keysChanged = subs
   }
 }
@@ -178,6 +179,8 @@ export class YMap extends AbstractType {
   forEach (f) {
     this._map.forEach((item, key) => {
       if (!item.deleted) {
+        // 所以实际遍历的是item.content.getContent()[item.length - 1]
+        // 这是假设item.content.getContent()是一个元素的数组??
         f(item.content.getContent()[item.length - 1], key, this)
       }
     })

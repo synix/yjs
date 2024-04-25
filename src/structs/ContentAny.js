@@ -2,6 +2,7 @@ import {
   UpdateEncoderV1, UpdateEncoderV2, UpdateDecoderV1, UpdateDecoderV2, Transaction, Item, StructStore // eslint-disable-line
 } from '../internals.js'
 
+// 这个Any不是任意类型，而是任意JavaScript基本数据类型
 export class ContentAny {
   /**
    * @param {Array<any>} arr
@@ -18,6 +19,7 @@ export class ContentAny {
    * @return {number}
    */
   getLength () {
+    // length就是数组长度, 对于JavaScript基本数据类型, 不会深入到数组元素了
     return this.arr.length
   }
 

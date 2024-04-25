@@ -12,6 +12,8 @@ export class AbstractStruct {
   constructor (id, length) {
     // 这个id关联的并不是这个Item，而是Item的content(的首字符)
     this.id = id
+
+    // length是指Item实例里content字段的长度
     this.length = length
   }
 

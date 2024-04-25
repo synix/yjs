@@ -23,17 +23,17 @@ if (isBrowser) {
 
 runTests({
   doc,
-  // map,
-  // array,
-  // text,
-  // xml,
-  // encoding,
-  // undoredo,
-  // compatibility,
-  // snapshot,
-  // updates,
-  // relativePositions,
-  // item,
+  map,
+  array,
+  text,
+  xml,
+  encoding,
+  undoredo,
+  compatibility,
+  snapshot,
+  updates,
+  relativePositions,
+  item,
 }).then(success => {
   /* istanbul ignore next */
   if (isNode) {

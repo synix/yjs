@@ -33,6 +33,9 @@ export const generateNewClientId = random.uint32
  * @property {boolean} [DocOpts.shouldLoad] Whether the document should be synced by the provider now. This is toggled to true when you call ydoc.load()
  */
 
+
+// See https://docs.yjs.dev/api/y.doc#event-handler 👇
+
 /**
  * @typedef {Object} DocEvents
  * @property {function(Doc):void} DocEvents.destroy
@@ -66,7 +69,7 @@ export class Doc extends ObservableV2 {
     super()
     this.gc = gc
 
-    // gc在回收一个Item实例之前会调用gcFilter()，如果返回false则不回收
+    // gc在调用tryGcDeleteSet()函数, 在回收Item对象之前会调用gcFilter(), 如果返回false则不回收
     this.gcFilter = gcFilter
     this.clientID = generateNewClientId()
     this.guid = guid

@@ -24,7 +24,7 @@ export class StructStore {
     /**
      * @type {null | { missing: Map<number, number>, update: Uint8Array }}
      * 
-     * pendingStructs和pendingDs在StructStore类里是没有用到的, 在encoding.js里有用到
+     * pendingStructs和pendingDs只在readUpdateV2()和encodeStateAsUpdateV2()函数里(见encoding.js)用到
      */
     this.pendingStructs = null
     /**

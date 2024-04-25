@@ -856,18 +856,29 @@ export class YText extends AbstractType {
    */
   constructor (string) {
     super()
+
     /**
      * Array of pending operations on this type
      * @type {Array<function():void>?}
+     * 
+     * _pending存储的是函数数组, 用来存储ytext被integrate()之前的操作
+     * 这里的_pending和YArray的_prelimContent如出一辙, 用来存储ytype被integrate()之前的操作
      */
     this._pending = string !== undefined ? [() => this.insert(0, string)] : []
+
     /**
      * @type {Array<ArraySearchMarker>|null}
+     * 
+     * _searchMarker在父类AbstractType构造器中初始化为null, 在YText构造器中重新被初始化为[]
      */
     this._searchMarker = []
+
     /**
      * Whether this YText contains formatting attributes.
      * This flag is updated when a formatting item is integrated (see ContentFormat.integrate)
+     * 
+     * ContentFormat.integrate()方法是将_hasFormatting唯一设置为true之处
+     * 
      */
     this._hasFormatting = false
   }
@@ -887,6 +898,8 @@ export class YText extends AbstractType {
    */
   _integrate (y, item) {
     super._integrate(y, item)
+
+    // 把存储在_pending中的函数都apply到ytext上
     try {
       /** @type {Array<function>} */ (this._pending).forEach(f => f())
     } catch (e) {
@@ -940,7 +953,7 @@ export class YText extends AbstractType {
      */
     let n = this._start
     while (n !== null) {
-      // 只拼接content为ContentString类型的
+      // 只拼接content为ContentString类型的Item对象
       if (!n.deleted && n.countable && n.content.constructor === ContentString) {
         str += /** @type {ContentString} */ (n.content).str
       }
@@ -1016,6 +1029,7 @@ export class YText extends AbstractType {
     const doc = /** @type {Doc} */ (this.doc)
     let str = ''
     let n = this._start
+
     function packStr () {
       if (str.length > 0) {
         // pack str with attributes to ops
@@ -1039,6 +1053,7 @@ export class YText extends AbstractType {
         str = ''
       }
     }
+
     const computeDelta = () => {
       while (n !== null) {
         if (isVisible(n, snapshot) || (prevSnapshot !== undefined && isVisible(n, prevSnapshot))) {
@@ -1091,8 +1106,10 @@ export class YText extends AbstractType {
         }
         n = n.right
       }
+
       packStr()
     }
+
     if (snapshot || prevSnapshot) {
       // snapshots are merged again after the transaction, so we need to keep the
       // transaction alive until we are done
@@ -1108,6 +1125,7 @@ export class YText extends AbstractType {
     } else {
       computeDelta()
     }
+
     return ops
   }
 
@@ -1172,11 +1190,15 @@ export class YText extends AbstractType {
    * @public
    */
   delete (index, length) {
+    // length为0, 不执行删除操作
     if (length === 0) {
       return
     }
+
     const y = this.doc
+ 
     if (y !== null) {
+      // 当前YText对象已经挂载到了ydoc上
       transact(y, transaction => {
         deleteText(transaction, findPosition(transaction, this, index, true), length)
       })

@@ -256,6 +256,10 @@ export class Item extends AbstractStruct {
    */
   constructor (id, left, origin, right, rightOrigin, parent, parentSub, content) {
     super(id, content.getLength())
+
+    // left/right是指针, 指向的是真实存在的Item对象
+    // origin/rightOrigin是ID, 并不一定和真实的Item对象挂钩
+
     /**
      * The item that was originally to the left of this item.
      * @type {ID | null}
@@ -276,10 +280,15 @@ export class Item extends AbstractStruct {
      * @type {ID | null}
      */
     this.rightOrigin = rightOrigin
+
     /**
      * @type {AbstractType<any>|ID|null}
+     * 
+     * parent这么多可能的类型，都对应什么情况呢?
+     * 
      */
     this.parent = parent
+
     /**
      * If the parent refers to this item with some kind of key (e.g. YMap, the
      * key is specified here. The key is then used to refer to the list in which
@@ -291,17 +300,20 @@ export class Item extends AbstractStruct {
      * @type {String | null}
      */
     this.parentSub = parentSub
+
     /**
      * If this type's effect is redone this type refers to the type that undid
      * this operation.
      * @type {ID | null}
      */
     this.redone = null
+
     /**
      * @type {AbstractContent}
-     * 如果content类型是ContentType，则content负责维护和YType实例一对一的关系
+     * 如果content类型是ContentType，则content负责维护Item和YType一对一的关系
      */
     this.content = content
+
     /**
      * bit1: keep
      * bit2: countable
@@ -330,6 +342,8 @@ export class Item extends AbstractStruct {
 
   /**
    * If true, do not garbage collect this Item.
+   * 
+   * 表示tryGcDeleteSet()在回收Item对象时，是否抗拒被回收
    */
   get keep () {
     return (this.info & binary.BIT1) > 0
@@ -403,11 +417,14 @@ export class Item extends AbstractStruct {
       this.rightOrigin = this.right.id
     }
 
+    // 给Item对象的parent赋值
     if ((this.left && this.left.constructor === GC) || (this.right && this.right.constructor === GC)) {
-      // 这是为什么呢??
+      // 这是为什么呢???
       this.parent = null
     } else if (!this.parent) {
       // only set parent if this shouldn't be garbage collected
+
+      // 把此Item对象的parent/parentSub设置成left或者right指针的
       if (this.left && this.left.constructor === Item) {
         this.parent = this.left.parent
         this.parentSub = this.left.parentSub
@@ -458,6 +475,7 @@ export class Item extends AbstractStruct {
         if (left !== null) {
           o = left.right
         } else if (this.parentSub !== null) {
+          // 从下面这行代码来看, Item对象里parentSub的值是其parent._map里一个key的值
           o = /** @type {AbstractType<any>} */ (this.parent)._map.get(this.parentSub) || null
           while (o !== null && o.left !== null) {
             o = o.left
@@ -465,6 +483,10 @@ export class Item extends AbstractStruct {
         } else {
           o = /** @type {AbstractType<any>} */ (this.parent)._start
         }
+
+
+        /***** 开始 解决冲突(conflict resolution)  *****/
+
         // TODO: use something like DeleteSet here (a tree implementation would be best)
         // @todo use global set definitions
         /**
@@ -521,9 +543,11 @@ export class Item extends AbstractStruct {
         this.left = left
       }
 
+      /***** 结束 解决冲突(conflict resolution) *****/
+
       // reconnect left/right + update parent map/start if necessary
       if (this.left !== null) {
-        // 把该Item对象插入到双向链表中间
+        // 把该Item对象链接到双向链表
         const right = this.left.right
         this.right = right
         this.left.right = this
@@ -563,8 +587,11 @@ export class Item extends AbstractStruct {
 
       // 再将Item对象的content进行integrate, 最终会将对应的ytype进行_integrate
       this.content.integrate(transaction, this)
+
       // add parent to transaction.changed
+      // 尝试把parent加入到transaction.changed里
       addChangedTypeToTransaction(transaction, /** @type {AbstractType<any>} */ (this.parent), this.parentSub)
+
       if ((/** @type {AbstractType<any>} */ (this.parent)._item !== null && /** @type {AbstractType<any>} */ (this.parent)._item.deleted) || (this.parentSub !== null && this.right !== null)) {
         // delete if parent is deleted or if this is not the current attribute value of parent
         this.delete(transaction)
@@ -605,7 +632,9 @@ export class Item extends AbstractStruct {
    */
   get lastId () {
     // allocating ids is pretty costly because of the amount of ids created, so we try to reuse whenever possible
+
     // 这里之所以要减1，是因为this.id.clock + this.length是下一个Item的clock值
+    // 所以这个lastId是一个虚拟的ID, 并不和实际的Item对象关联
     return this.length === 1 ? this.id : createID(this.id.client, this.id.clock + this.length - 1)
   }
 
@@ -630,6 +659,7 @@ export class Item extends AbstractStruct {
       this.content.mergeWith(right.content)
     ) {
       const searchMarker = /** @type {AbstractType<any>} */ (this.parent)._searchMarker
+
       if (searchMarker) {
         searchMarker.forEach(marker => {
           if (marker.p === right) {
@@ -637,21 +667,32 @@ export class Item extends AbstractStruct {
             marker.p = this
             // adjust marker index
             if (!this.deleted && this.countable) {
+              // 这里为什么要减去this.length而不是加上this.length呢?
               marker.index -= this.length
             }
           }
         })
       }
+
+      // 继承right的keep属性
       if (right.keep) {
         this.keep = true
       }
+
+      // 重新调整双向链表中的指针
       this.right = right.right
+
       if (this.right !== null) {
         this.right.left = this
       }
+
       this.length += right.length
+
+      // 返回true表示merge成功
       return true
     }
+
+    // 返回false表示merge失败
     return false
   }
 
@@ -669,6 +710,7 @@ export class Item extends AbstractStruct {
       }
       this.markDeleted()
       // 为什么要在transaction里维护一个deleteSet?
+      // 因为在transaction里新增和修改的Item对象，已经integrate到了doc的StructStore里
       addToDeleteSet(transaction.deleteSet, this.id.client, this.id.clock, this.length)
       addChangedTypeToTransaction(transaction, parent, this.parentSub)
       this.content.delete(transaction)
@@ -678,13 +720,18 @@ export class Item extends AbstractStruct {
   /**
    * @param {StructStore} store
    * @param {boolean} parentGCd
-   * parentGCd表示是把本Item里的content GC掉(将content置为ContentDeleted实例), 还是把本Item GC掉(将本Item替换为GC实例)
+   *
+   * parentGCd表示GC的方式
+   * 即是将本Item实例替换为GC实例, 还是只是将Item.content替换为ContentDeleted实例
+   *
    */
   gc (store, parentGCd) {
     if (!this.deleted) {
       throw error.unexpectedCase()
     }
+
     this.content.gc(store)
+
     if (parentGCd) {
       replaceStruct(store, this, new GC(this.id, this.length))
     } else {
@@ -711,7 +758,7 @@ export class Item extends AbstractStruct {
       (parentSub === null ? 0 : binary.BIT6) // parentSub is non-null
     encoder.writeInfo(info)
 
-    // 主要写入3个信息: origin/rightOrigin/content
+    // 写入3个值: origin/rightOrigin/content
     if (origin !== null) {
       encoder.writeLeftID(origin)
     }

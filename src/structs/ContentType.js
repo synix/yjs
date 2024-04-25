@@ -107,6 +107,7 @@ export class ContentType {
    */
   delete (transaction) {
     let item = this.type._start
+
     while (item !== null) {
       if (!item.deleted) {
         item.delete(transaction)
@@ -119,6 +120,7 @@ export class ContentType {
       }
       item = item.right
     }
+
     this.type._map.forEach(item => {
       if (!item.deleted) {
         item.delete(transaction)
@@ -127,6 +129,7 @@ export class ContentType {
         transaction._mergeStructs.push(item)
       }
     })
+
     transaction.changed.delete(this.type)
   }
 
