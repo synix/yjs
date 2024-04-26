@@ -107,19 +107,25 @@ export class Transaction {
      * 
      */
     this.changedParentTypes = new Map()
+
     /**
      * @type {Array<AbstractStruct>}
+     * 
+     * 这个_mergeStructs起什么作用??
      */
     this._mergeStructs = []
+
     /**
      * @type {any}
      */
     this.origin = origin
+
     /**
      * Stores meta information on the transaction
      * @type {Map<any,any>}
      */
     this.meta = new Map()
+
     /**
      * Whether this change originates from this doc.
      * @type {boolean}

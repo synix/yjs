@@ -224,6 +224,7 @@ export const getItemCleanStart = (transaction, id) => {
  * 
  * // getItemCleanEnd()和getItemCleanStart()是对应的
  * // getItemCleanEnd()查找的也是id.clock所精确匹配的Item实例的索引，但满足的条件是id.clock = item.id.clock + item.length - 1
+ * // 如果找不到满足上述条件的Item实例，会强行通过splitItem()将已有Item实例拆分成两个Item实例来满足这个条件
  *
  * @param {Transaction} transaction
  * @param {StructStore} store

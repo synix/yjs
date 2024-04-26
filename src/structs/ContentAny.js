@@ -2,7 +2,7 @@ import {
   UpdateEncoderV1, UpdateEncoderV2, UpdateDecoderV1, UpdateDecoderV2, Transaction, Item, StructStore // eslint-disable-line
 } from '../internals.js'
 
-// 这个Any不是任意类型，而是任意JavaScript基本数据类型
+// 这个Any不是任意类型，而是任意JavaScript基本数据类型(包括null)
 export class ContentAny {
   /**
    * @param {Array<any>} arr

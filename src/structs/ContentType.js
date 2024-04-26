@@ -106,6 +106,7 @@ export class ContentType {
    * @param {Transaction} transaction
    */
   delete (transaction) {
+    /***** 回收ytype内部的双向链表  *****/
     let item = this.type._start
 
     while (item !== null) {
@@ -121,6 +122,7 @@ export class ContentType {
       item = item.right
     }
 
+    /***** 回收ytype内部的_map  *****/
     this.type._map.forEach(item => {
       if (!item.deleted) {
         item.delete(transaction)
@@ -130,6 +132,7 @@ export class ContentType {
       }
     })
 
+    // this.type已经被删除了, 就没有必要再触发其observe()注册的listener了
     transaction.changed.delete(this.type)
   }
 

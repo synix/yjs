@@ -137,6 +137,8 @@ export class YMap extends AbstractType {
 
   /**
    * Returns the size of the YMap (count of key/value pairs)
+   * 
+   * 返回YMap对象键值对的个数
    *
    * @return {number}
    */
@@ -159,6 +161,8 @@ export class YMap extends AbstractType {
    * @return {IterableIterator<MapType>}
    */
   values () {
+    // values()/entries()/forEach()/get()这4个方法对value的提取逻辑是一致的, 所谓的value是返回item.content.getContent()[item.length - 1]
+    // 这是预设item.content.getContent()是一个元素的数组??
     return iterator.iteratorMap(createMapIterator(this._map), /** @param {any} v */ v => v[1].content.getContent()[v[1].length - 1])
   }
 
@@ -179,8 +183,6 @@ export class YMap extends AbstractType {
   forEach (f) {
     this._map.forEach((item, key) => {
       if (!item.deleted) {
-        // 所以实际遍历的是item.content.getContent()[item.length - 1]
-        // 这是假设item.content.getContent()是一个元素的数组??
         f(item.content.getContent()[item.length - 1], key, this)
       }
     })

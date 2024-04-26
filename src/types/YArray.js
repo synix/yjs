@@ -32,7 +32,8 @@ export class YArrayEvent extends YEvent {
    */
   constructor (yarray, transaction) {
     super(yarray, transaction)
-    // this._transaction = transaction
+    // 这行应该是废弃代码吧...
+    this._transaction = transaction
   }
 }
 
@@ -54,6 +55,8 @@ export class YArray extends AbstractType {
 
     /**
      * @type {Array<ArraySearchMarker>}
+     * 
+     * AbstractType构造方法会把_searchMarker初始化为null, 这里重新初始化为[]
      */
     this._searchMarker = []
   }
@@ -112,7 +115,7 @@ export class YArray extends AbstractType {
      */
     const arr = new YArray()
     arr.insert(0, this.toArray().map(el =>
-      // YType是要调用clone()方法进行深度拷贝的
+      // ytype是要调用clone()方法进行深度拷贝的
       el instanceof AbstractType ? /** @type {typeof el} */ (el.clone()) : el
     ))
     return arr
@@ -132,9 +135,11 @@ export class YArray extends AbstractType {
    */
   _callObserver (transaction, parentSubs) {
     super._callObserver(transaction, parentSubs)
-    // 注意YArrayEvent是未使用parentSubs的
+    // YArrayEvent是不使用parentSubs的, 而YMapEvent是使用的
     callTypeObservers(this, transaction, new YArrayEvent(this, transaction))
   }
+
+  // 注意: YArray的index如同_length，是深入到链表项的content层面，而不是链表层面的索引
 
   /**
    * Inserts new content at an index.
@@ -183,9 +188,9 @@ export class YArray extends AbstractType {
   }
 
   /**
-   * Preppends content to this YArray.
+   * Prepends content to this YArray.
    *
-   * @param {Array<T>} content Array of content to preppend.
+   * @param {Array<T>} content Array of content to prepend.
    */
   unshift (content) {
     this.insert(0, content)
@@ -228,7 +233,7 @@ export class YArray extends AbstractType {
   }
 
   /**
-   * Transforms this YArray to a JavaScript Array.
+   * Returns a portion of this YArray into a JavaScript Array selected from start to end (end not included)
    *
    * @param {number} [start]
    * @param {number} [end]
@@ -261,7 +266,7 @@ export class YArray extends AbstractType {
   }
 
   /**
-   * Executes a provided function once on overy element of this YArray.
+   * Executes a provided function once on every element of this YArray.
    *
    * @param {function(T,number,YArray<T>):void} f A function to execute on every element of this YArray.
    */

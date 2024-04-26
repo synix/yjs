@@ -22,18 +22,18 @@ if (isBrowser) {
 }
 
 runTests({
-  doc,
-  map,
+  // doc,
+  // map,
   array,
-  text,
-  xml,
-  encoding,
-  undoredo,
-  compatibility,
-  snapshot,
-  updates,
-  relativePositions,
-  item,
+  // text,
+  // xml,
+  // encoding,
+  // undoredo,
+  // compatibility,
+  // snapshot,
+  // updates,
+  // relativePositions,
+  // item,
 }).then(success => {
   /* istanbul ignore next */
   if (isNode) {

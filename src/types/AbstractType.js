@@ -83,7 +83,7 @@ const markPosition = (searchMarker, p, index) => {
   }
 }
 
-// 所以, 下面这行说明了marker到底是做什么用的吧
+// 下面这行说明了marker到底是做什么用的吧
 
 /**
  * Search marker help us to find positions in the associative array faster.
@@ -324,6 +324,7 @@ export class AbstractType {
     /**
      * @type {Map<string,Item>}
      * 这个_map是给YMap和YText使用的
+     * 对于YMap而言, _map的value存的是key对应的value的当前值, value的历史值是作为墓碑和当前值一起链接成一个双向链表的, 这个双向链表的尾指针就是_map的value
      */
     this._map = new Map()
 
@@ -518,6 +519,7 @@ export const typeListSlice = (type, start, end) => {
           cs.push(c[i])
           len--
         }
+        // 从此以后start就是0了, 因为已经截取到了传入的start位置的Item对象，接下来的Item对象都是从0开始截取了
         start = 0
       }
     }
@@ -574,7 +576,7 @@ export const typeListToArraySnapshot = (type, snapshot) => {
 }
 
 /**
- * Executes a provided function on once on overy element of this YArray.
+ * Executes a provided function on once on every element of this YArray.
  *
  * @param {AbstractType<any>} type
  * @param {function(any,number,any):void} f A function to execute on every element of this YArray.
@@ -632,11 +634,13 @@ export const typeListCreateIterator = type => {
   let currentContentIndex = 0
   return {
     [Symbol.iterator] () {
+      // 这个就是return后面这个对象
       return this
     },
     next: () => {
       // find some content
       if (currentContent === null) {
+        // 上一个Item对象的content已经被消费完了...找下一个Item对象赋给currentContent继续消费
         while (n !== null && n.deleted) {
           n = n.right
         }
@@ -649,9 +653,11 @@ export const typeListCreateIterator = type => {
         }
         // we found n, so we can set currentContent
         currentContent = n.content.getContent()
+        // 开始消费新的Item对象, 所以currentContentIndex重置为0
         currentContentIndex = 0
         n = n.right // we used the content of n, now iterate to next
       }
+
       const value = currentContent[currentContentIndex++]
       // check if we need to empty currentContent
       if (currentContent.length <= currentContentIndex) {
@@ -666,7 +672,7 @@ export const typeListCreateIterator = type => {
 }
 
 /**
- * Executes a provided function on once on overy element of this YArray.
+ * Executes a provided function on once on every element of this YArray.
  * Operates on a snapshotted state of the document.
  *
  * @param {AbstractType<any>} type
@@ -735,7 +741,7 @@ export const typeListInsertGenericsAfter = (transaction, parent, referenceItem, 
   const doc = transaction.doc
   const ownClientId = doc.clientID
   const store = doc.store
-  // 如果referenceItem为null，表示插入到为parent容器的头部，即right将为parent容器现在的链表头
+  // 如果referenceItem为null，表示插入到为parent容器的头部，即parent容器的链表头将会易主，待插入Item的right指针指向当前链表头
   // 否则，插入为referenceItem的下一个元素(referenceItem的right指针指向的) ，即right将为referenceItem的right
 
   // right在这个函数里只经过这一次赋值, 所以待插入的元素永远在referenceItem之前
@@ -756,7 +762,7 @@ export const typeListInsertGenericsAfter = (transaction, parent, referenceItem, 
     }
   }
 
-  // 从这个forEach遍历可以看出, content数组里除了连续的JavaScript基本数据类型的值，其他类型的值都会一一对应一个Item实例
+  // 从这个forEach遍历可以看出, content数组里除了连续的JavaScript基本数据类型的值，其他类型的值都会对应一个Item实例
   // 而content数组里的JavaScript基本数据类型的值，如果是连续的，会被收集到jsonContent数组里，然后打包成一个Item(见上述packJsonContent()函数)
   content.forEach(c => {
     if (c === null) {
@@ -777,6 +783,8 @@ export const typeListInsertGenericsAfter = (transaction, parent, referenceItem, 
           switch (c.constructor) {
             case Uint8Array:
             case ArrayBuffer:
+              // 因为parent为ymap, 所以这个函数里parentSub传入的都是null
+
               // Uint8Array/ArrayBuffer对应ContentBinary
               left = new Item(createID(ownClientId, getState(store, ownClientId)), left, left && left.lastId, right, right && right.id, parent, null, new ContentBinary(new Uint8Array(/** @type {Uint8Array} */ (c))))
               left.integrate(transaction, 0)
@@ -821,6 +829,7 @@ export const typeListInsertGenerics = (transaction, parent, index, content) => {
 
   // 如果插入位置是0，就直接插入到parent容器的头部
   if (index === 0) {
+    // 0索引处新增了content.length个元素, 得更新一下parent._searchMarker
     if (parent._searchMarker) {
       updateMarkerChanges(parent._searchMarker, index, content.length)
     }
@@ -830,6 +839,9 @@ export const typeListInsertGenerics = (transaction, parent, index, content) => {
 
   const startIndex = index
   const marker = findMarker(parent, index)
+
+  /***** 下面这些代码在锁定插入位置，也就是相对n所指向Item对象的index索引处(index可能横跨多个Item实例) *****/
+
   let n = parent._start
   if (marker !== null) {
     n = marker.p
@@ -838,9 +850,13 @@ export const typeListInsertGenerics = (transaction, parent, index, content) => {
     if (index === 0) {
       // @todo refactor this as it actually doesn't consider formats
       n = n.prev // important! get the left undeleted item so that we can actually decrease index
+      // 这里index是0，所以用+=和=并无区别
       index += (n && n.countable && !n.deleted) ? n.length : 0
     }
   }
+
+  /***** 下面这些代码执行完，插入位置就紧随n所指向Item对象之后  *****/
+
   for (; n !== null; n = n.right) {
     if (!n.deleted && n.countable) {
       if (index <= n.length) {
@@ -853,9 +869,11 @@ export const typeListInsertGenerics = (transaction, parent, index, content) => {
       index -= n.length
     }
   }
+
   if (parent._searchMarker) {
     updateMarkerChanges(parent._searchMarker, startIndex, content.length)
   }
+
   return typeListInsertGenericsAfter(transaction, parent, n, content)
 }
 
@@ -928,11 +946,15 @@ export const typeListDelete = (transaction, parent, index, length) => {
     }
     n = n.right
   }
+
   if (length > 0) {
     throw lengthExceeded()
   }
+
   if (parent._searchMarker) {
-    // 为什么第3个参数len传入的是-startLength + length?
+    // startLength是传入的length的原始值
+    // 如果length递减为0, 那第3个参数就是-startLength
+    // 如果length递减为负值, 那第3个参数就是-startLength + length
     updateMarkerChanges(parent._searchMarker, startIndex, -startLength + length /* in case we remove the above exception */)
   }
 }
@@ -991,6 +1013,10 @@ export const typeMapSet = (transaction, parent, key, value) => {
         }
     }
   }
+
+  // origin类型为ID, 但是并不指向实际存在的Item对象, 初始化时是left所指向的Item对象的最后一个clock值
+  // right和rightOrigin都为null, 表示ymap的value是一个双向链表，value的当前值位于表尾
+  // parentSub传入的是ymap某个key的值
   new Item(createID(ownClientId, getState(doc.store, ownClientId)), left, left && left.lastId, null, null, parent, key, content).integrate(transaction, 0)
 }
 

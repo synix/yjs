@@ -453,6 +453,7 @@ export class Item extends AbstractStruct {
   integrate (transaction, offset) {
     if (offset > 0) {
       this.id.clock += offset
+      // 如果找不到，getItemCleanEnd()会强行拆分Item实例, this就是拆分出来的代表右半边的Item实例
       this.left = getItemCleanEnd(transaction, transaction.doc.store, createID(this.id.client, this.id.clock - 1))
       this.origin = this.left.lastId
       this.content = this.content.splice(offset)
@@ -475,7 +476,7 @@ export class Item extends AbstractStruct {
         if (left !== null) {
           o = left.right
         } else if (this.parentSub !== null) {
-          // 从下面这行代码来看, Item对象里parentSub的值是其parent._map里一个key的值
+          // 如果此Item对象是ymap里的, 则从value这个表尾指针一直向左遍历找到表头
           o = /** @type {AbstractType<any>} */ (this.parent)._map.get(this.parentSub) || null
           while (o !== null && o.left !== null) {
             o = o.left
@@ -547,13 +548,14 @@ export class Item extends AbstractStruct {
 
       // reconnect left/right + update parent map/start if necessary
       if (this.left !== null) {
-        // 把该Item对象链接到双向链表
+        // 把此Item对象链接到parent的双向链表里
         const right = this.left.right
         this.right = right
         this.left.right = this
       } else {
         let r
         if (this.parentSub !== null) {
+          // 把此Item对象放到ymap的value双向链表的表头
           r = /** @type {AbstractType<any>} */ (this.parent)._map.get(this.parentSub) || null
           while (r !== null && r.left !== null) {
             r = r.left
@@ -570,9 +572,11 @@ export class Item extends AbstractStruct {
         this.right.left = this
       } else if (this.parentSub !== null) {
         // set as current parent value if right === null and this is parentSub
+        // 尾指针指向 代表key的当前值的Item对象
         /** @type {AbstractType<any>} */ (this.parent)._map.set(this.parentSub, this)
         if (this.left !== null) {
           // this is the current attribute value of parent. delete right
+          // 前一个历史值成为墓碑
           this.left.delete(transaction)
         }
       }
@@ -592,7 +596,11 @@ export class Item extends AbstractStruct {
       // 尝试把parent加入到transaction.changed里
       addChangedTypeToTransaction(transaction, /** @type {AbstractType<any>} */ (this.parent), this.parentSub)
 
-      if ((/** @type {AbstractType<any>} */ (this.parent)._item !== null && /** @type {AbstractType<any>} */ (this.parent)._item.deleted) || (this.parentSub !== null && this.right !== null)) {
+      if ((/** @type {AbstractType<any>} */ (this.parent)._item !== null && /** @type {AbstractType<any>} */ (this.parent)._item.deleted)
+        ||  (this.parentSub !== null && this.right !== null)) {
+        // 第一个条件表示parent是yarray并且yarray已经标记为删除了
+        // 第二个条件表示parent是ymap并且此Item对象不在表尾, 也就是说不是key的当前值
+
         // delete if parent is deleted or if this is not the current attribute value of parent
         this.delete(transaction)
       }
@@ -704,15 +712,21 @@ export class Item extends AbstractStruct {
   delete (transaction) {
     if (!this.deleted) {
       const parent = /** @type {AbstractType<any>} */ (this.parent)
+
       // adjust the length of parent
+      // parentSub为null, 说明此Item是yarray里的元素
       if (this.countable && this.parentSub === null) {
         parent._length -= this.length
       }
+
       this.markDeleted()
+
       // 为什么要在transaction里维护一个deleteSet?
-      // 因为在transaction里新增和修改的Item对象，已经integrate到了doc的StructStore里
+      // 因为在transaction里新增和修改的Item对象，已经integrate到了doc的StructStore里, 所以要单独维护一个deleteSet来记录哪些Item对象是被删除的
       addToDeleteSet(transaction.deleteSet, this.id.client, this.id.clock, this.length)
       addChangedTypeToTransaction(transaction, parent, this.parentSub)
+
+      // 只有ContentType和ContentDoc这两种类型实现了delete()方法,其他Content类型的delete()方法都是空实现
       this.content.delete(transaction)
     }
   }
