@@ -59,9 +59,11 @@ const popStackItem = (undoManager, stack, eventType) => {
   let _tr = null
   const doc = undoManager.doc
   const scope = undoManager.scope
+
   transact(doc, transaction => {
     while (stack.length > 0 && undoManager.currStackItem === null) {
       const store = doc.store
+      // 🚀  stack.pop() 是`popStackItem()`函数里唯一对stack进行修改的代码
       const stackItem = /** @type {StackItem} */ (stack.pop())
       /**
        * @type {Set<Item>}
@@ -72,6 +74,7 @@ const popStackItem = (undoManager, stack, eventType) => {
        */
       const itemsToDelete = []
       let performedChange = false
+
       iterateDeletedStructs(transaction, stackItem.insertions, struct => {
         if (struct instanceof Item) {
           if (struct.redone !== null) {
@@ -86,6 +89,7 @@ const popStackItem = (undoManager, stack, eventType) => {
           }
         }
       })
+
       iterateDeletedStructs(transaction, stackItem.deletions, struct => {
         if (
           struct instanceof Item &&
@@ -96,9 +100,11 @@ const popStackItem = (undoManager, stack, eventType) => {
           itemsToRedo.add(struct)
         }
       })
+
       itemsToRedo.forEach(struct => {
         performedChange = redoItem(transaction, struct, itemsToRedo, stackItem.insertions, undoManager.ignoreRemoteMapChanges, undoManager) !== null || performedChange
       })
+
       // We want to delete in reverse order so that children are deleted before
       // parents, so we have more information available when items are filtered.
       for (let i = itemsToDelete.length - 1; i >= 0; i--) {
@@ -108,22 +114,28 @@ const popStackItem = (undoManager, stack, eventType) => {
           performedChange = true
         }
       }
+
       undoManager.currStackItem = performedChange ? stackItem : null
     }
+
     transaction.changed.forEach((subProps, type) => {
       // destroy search marker if necessary
       if (subProps.has(null) && type._searchMarker) {
         type._searchMarker.length = 0
       }
     })
+
     _tr = transaction
   }, undoManager)
+
   const res = undoManager.currStackItem
+
   if (res != null) {
     const changedParentTypes = _tr.changedParentTypes
     undoManager.emit('stack-item-popped', [{ stackItem: res, type: eventType, changedParentTypes, origin: undoManager }, undoManager])
     undoManager.currStackItem = null
   }
+
   return res
 }
 
@@ -162,7 +174,8 @@ export class UndoManager extends ObservableV2 {
    * @param {Doc|AbstractType<any>|Array<AbstractType<any>>} typeScope Limits the scope of the UndoManager. If this is set to a ydoc instance, all changes on that ydoc will be undone. If set to a specific type, only changes on that type or its children will be undone. Also accepts an array of types.
    * @param {UndoManagerOptions} options
    */
-  constructor (typeScope, {
+  constructor(typeScope, {
+    // 即 500ms 以内的操作会被捕获(capture)或者说合并到同一个 StackItem 中
     captureTimeout = 500,
     captureTransaction = _tr => true,
     deleteFilter = () => true,
@@ -217,15 +230,26 @@ export class UndoManager extends ObservableV2 {
       ) {
         return
       }
+
+      // 记录 Transaction 是否是在执行 undo()/redo() 时触发的
       const undoing = this.undoing
       const redoing = this.redoing
+
+      // 🚀 这个代码很关键
+      // 只有在执行 undo() 时, push item 的 stack 是 redoStack
+      // 在执行 redo() 和 用户操作时，push item 的 stack 是 undoStack
       const stack = undoing ? this.redoStack : this.undoStack
+
       if (undoing) {
+        // 在执行undo()时，不再将下一个 StackItem 合并到上一个 StackItem 中
         this.stopCapturing() // next undo should not be appended to last stack item
       } else if (!redoing) {
         // neither undoing nor redoing: delete redoStack
+        // 没有执行undo()或redo(), 那就是用户操作触发的Transaction, 则清空 redoStack
+        // 即只要有用户操作就清空 redoStack
         this.clear(false, true)
       }
+
       const insertions = new DeleteSet()
       transaction.afterState.forEach((endClock, client) => {
         const startClock = transaction.beforeState.get(client) || 0
@@ -234,9 +258,17 @@ export class UndoManager extends ObservableV2 {
           addToDeleteSet(insertions, client, startClock, len)
         }
       })
+
       const now = time.getUnixTime()
+
+      // didAdd 表示本次操作是否作为一个新的 StackItem 被添加到 undoStack 或 redoStack 中
       let didAdd = false
+
       if (this.lastChange > 0 && now - this.lastChange < this.captureTimeout && stack.length > 0 && !undoing && !redoing) {
+        // this.lastChange > 0 && now - this.lastChange < this.captureTimeout: 如果上次用户操作的时间和当前时间的差小于 captureTimeout, 则将本次操作合并到上一个 StackItem 中
+        // stack.length > 0: 确保 undoStack 或 redoStack 中至少有一个 StackItem
+        // !undoing && !redoing: 确保不是在执行 undo() 或 redo() 时触发的 Transaction
+
         // append change to last stack op
         const lastOp = stack[stack.length - 1]
         lastOp.deletions = mergeDeleteSets([lastOp.deletions, transaction.deleteSet])
@@ -246,7 +278,10 @@ export class UndoManager extends ObservableV2 {
         stack.push(new StackItem(transaction.deleteSet, insertions))
         didAdd = true
       }
+
       if (!undoing && !redoing) {
+        // 用户操作触发 Transaction 时, 更新 lastChange
+        // 这是为了将 500ms 内用户的连续操作合并到同一个 StackItem 中
         this.lastChange = now
       }
       // make sure that deleted structs are not gc'd
@@ -255,16 +290,25 @@ export class UndoManager extends ObservableV2 {
           keepItem(item, true)
         }
       })
+
       /**
        * @type {[StackItemEvent, UndoManager]}
        */
-      const changeEvent = [{ stackItem: stack[stack.length - 1], origin: transaction.origin, type: undoing ? 'redo' : 'undo', changedParentTypes: transaction.changedParentTypes }, this]
+      const changeEvent = [{
+        stackItem: stack[stack.length - 1],
+        origin: transaction.origin,
+        type: undoing ? 'redo' : 'undo',
+        changedParentTypes: transaction.changedParentTypes
+      }, this]
+
       if (didAdd) {
         this.emit('stack-item-added', changeEvent)
       } else {
         this.emit('stack-item-updated', changeEvent)
       }
     }
+
+    // 在每次transaction执行后，都会触发 'afterTransaction' 事件
     this.doc.on('afterTransaction', this.afterTransactionHandler)
     this.doc.on('destroy', () => {
       this.destroy()
@@ -351,6 +395,7 @@ export class UndoManager extends ObservableV2 {
     this.undoing = true
     let res
     try {
+      // popStackItem 只在 undo() 和 redo() 这2个函数中被调用到
       res = popStackItem(this, this.undoStack, 'undo')
     } finally {
       this.undoing = false
