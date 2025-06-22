@@ -26,6 +26,7 @@ import {
   typeMapGetAll,
   updateMarkerChanges,
   ContentType,
+  warnPrematureAccess,
   ArraySearchMarker, UpdateDecoderV1, UpdateDecoderV2, UpdateEncoderV1, UpdateEncoderV2, ID, Doc, Item, Snapshot, Transaction // eslint-disable-line
 } from '../internals.js'
 
@@ -477,7 +478,7 @@ export const cleanupYTextFormatting = type => {
 }
 
 /**
- * This will be called by the transction once the event handlers are called to potentially cleanup
+ * This will be called by the transaction once the event handlers are called to potentially cleanup
  * formatting attributes.
  *
  * @param {Transaction} transaction
@@ -567,7 +568,7 @@ const deleteText = (transaction, currPos, length) => {
 
 /**
  * The Quill Delta format represents changes on a text document with
- * formatting information. For mor information visit {@link https://quilljs.com/docs/delta/|Quill Delta}
+ * formatting information. For more information visit {@link https://quilljs.com/docs/delta/|Quill Delta}
  *
  * @example
  *   {
@@ -889,6 +890,7 @@ export class YText extends AbstractType {
    * @type {number}
    */
   get length () {
+    this.doc ?? warnPrematureAccess()
     return this._length
   }
 
@@ -947,6 +949,7 @@ export class YText extends AbstractType {
    * @public
    */
   toString () {
+    this.doc ?? warnPrematureAccess()
     let str = ''
     /**
      * @type {Item|null}
@@ -975,7 +978,7 @@ export class YText extends AbstractType {
   /**
    * Apply a {@link Delta} on this shared YText type.
    *
-   * @param {any} delta The changes to apply on this element.
+   * @param {Array<any>} delta The changes to apply on this element.
    * @param {object}  opts
    * @param {boolean} [opts.sanitize] Sanitize input delta. Removes ending newlines if set to true.
    *
@@ -1021,6 +1024,7 @@ export class YText extends AbstractType {
    * @public
    */
   toDelta (snapshot, prevSnapshot, computeYChange) {
+    this.doc ?? warnPrematureAccess()
     /**
      * @type{Array<any>}
      */

@@ -16,6 +16,7 @@ import {
   YArrayRefID,
   callTypeObservers,
   transact,
+  warnPrematureAccess,
   ArraySearchMarker, UpdateDecoderV1, UpdateDecoderV2, UpdateEncoderV1, UpdateEncoderV2, Doc, Transaction, Item // eslint-disable-line
 } from '../internals.js'
 import { typeListSlice } from './AbstractType.js'
@@ -25,17 +26,8 @@ import { typeListSlice } from './AbstractType.js'
  * @template T
  * @extends YEvent<YArray<T>>
  */
-export class YArrayEvent extends YEvent {
-  /**
-   * @param {YArray<T>} yarray The changed type
-   * @param {Transaction} transaction The transaction object
-   */
-  constructor (yarray, transaction) {
-    super(yarray, transaction)
-    // 这行应该是废弃代码吧...
-    this._transaction = transaction
-  }
-}
+
+export class YArrayEvent extends YEvent {}
 
 /**
  * A shared Array implementation.
@@ -122,9 +114,8 @@ export class YArray extends AbstractType {
   }
 
   get length () {
-    // 如果_prelimContent为null，说明已经执行过_integrate()方法，直接返回this._length
-    // 否则返回_prelimContent数组的长度
-    return this._prelimContent === null ? this._length : this._prelimContent.length
+    this.doc ?? warnPrematureAccess()
+    return this._length
   }
 
   /**
@@ -233,7 +224,8 @@ export class YArray extends AbstractType {
   }
 
   /**
-   * Returns a portion of this YArray into a JavaScript Array selected from start to end (end not included)
+   * Returns a portion of this YArray into a JavaScript Array selected
+   * from start to end (end not included).
    *
    * @param {number} [start]
    * @param {number} [end]

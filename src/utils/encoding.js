@@ -199,7 +199,7 @@ export const readClientsStructRefs = (decoder, doc) => {
 
           const struct = new Item(
             createID(client, clock),
-            null, // leftd
+            null, // left
             origin, // origin
             null, // right
             rightOrigin, // right origin
@@ -234,7 +234,7 @@ export const readClientsStructRefs = (decoder, doc) => {
  * then we start emptying the stack.
  *
  * It is not possible to have circles: i.e. struct1 (from client1) depends on struct2 (from client2)
- * depends on struct3 (from client1). Therefore the max stack size is eqaul to `structReaders.length`.
+ * depends on struct3 (from client1). Therefore the max stack size is equal to `structReaders.length`.
  *
  * This method is implemented in a way so that we can resume computation if this update
  * causally depends on another update.
@@ -328,19 +328,17 @@ const integrateStructs = (transaction, store, clientsStructRefs) => {
     // 把stack里缓存的Item/GC对象, 放入restStructs里
     for (const item of stack) {
       const client = item.id.client
-      const unapplicableItems = clientsStructRefs.get(client)
-
+      const inapplicableItems = clientsStructRefs.get(client)
       // 无论if还是else，处理完都说明 clientsStructRefs 已经没有client id了
-      if (unapplicableItems) {
+      if (inapplicableItems) {
         // decrement because we weren't able to apply previous operation
-        unapplicableItems.i--
+        inapplicableItems.i--
         // 把未处理到的Item/GC对象放入restStructs.clients
-        restStructs.clients.set(client, unapplicableItems.refs.slice(unapplicableItems.i))
-
+        restStructs.clients.set(client, inapplicableItems.refs.slice(inapplicableItems.i))
         // 把对应client id从clientsStructRefs这个map里清除掉
         clientsStructRefs.delete(client)
-        unapplicableItems.i = 0
-        unapplicableItems.refs = []
+        inapplicableItems.i = 0
+        inapplicableItems.refs = []
       } else {
         // item was the last item on clientsStructRefs and the field was already cleared. Add item to restStructs and continue
         restStructs.clients.set(client, [item])
@@ -549,7 +547,7 @@ export const readUpdateV2 = (decoder, ydoc, transactionOrigin, structDecoder = n
 /**
  * Read and apply a document update.
  *
- * This function has the same effect as `applyUpdate` but accepts an decoder.
+ * This function has the same effect as `applyUpdate` but accepts a decoder.
  *
  * @param {decoding.Decoder} decoder
  * @param {Doc} ydoc

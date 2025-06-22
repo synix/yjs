@@ -126,10 +126,10 @@ export class Doc extends ObservableV2 {
      * 与connection provider有关，当provider与后端完成同步时，这个值会被设置为true
      */
     this.isSynced = false
+    this.isDestroyed = false
     /**
-     * Promise that resolves once the document has been loaded from a presistence provider.
-     * 
-     * 也就是说，如果外界发现 this.isLoaded 为false，那就可以 await this.whenLoaded 等待加载完成
+      * Promise that resolves once the document has been loaded from a persistence provider.
+      * 也就是说，如果外界发现 this.isLoaded 为false，那就可以 await this.whenLoaded 等待加载完成
      */
     this.whenLoaded = promise.create(resolve => {
       this.on('load', () => {
@@ -371,8 +371,8 @@ export class Doc extends ObservableV2 {
    */
   destroy () {
     // 首先是处理subdocs
-
     // 先把所有的subdoc都destroy掉
+    this.isDestroyed = true
     array.from(this.subdocs).forEach(subdoc => subdoc.destroy())
     const item = this._item
     if (item !== null) {

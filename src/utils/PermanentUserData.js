@@ -76,7 +76,7 @@ export class PermanentUserData {
       )
     })
 
-    // add intial data
+    // add initial data
     storeType.forEach(initUser)
   }
 

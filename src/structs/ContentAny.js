@@ -2,7 +2,11 @@ import {
   UpdateEncoderV1, UpdateEncoderV2, UpdateDecoderV1, UpdateDecoderV2, Transaction, Item, StructStore // eslint-disable-line
 } from '../internals.js'
 
-// 这个Any不是任意类型，而是任意JavaScript基本数据类型(包括null)
+import * as env from 'lib0/environment'
+import * as object from 'lib0/object'
+
+const isDevMode = env.getVariable('node_env') === 'development'
+
 export class ContentAny {
   /**
    * @param {Array<any>} arr
@@ -13,6 +17,7 @@ export class ContentAny {
      * 存储JavaScript基本数据类型的值的数组
      */
     this.arr = arr
+    isDevMode && object.deepFreeze(arr)
   }
 
   /**
